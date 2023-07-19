@@ -3,6 +3,10 @@ name = "bacchus-gpu-controller"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "crdgen"
+path = "src/crdgen.rs"
+
 [dependencies]
 anyhow = "1.0.72"
 futures = "0.3.28"
