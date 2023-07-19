@@ -7,6 +7,10 @@ edition = "2021"
 name = "crdgen"
 path = "src/crdgen.rs"
 
+[[bin]]
+name = "controller"
+path = "src/controller.rs"
+
 [dependencies]
 anyhow = "1.0.72"
 futures = "0.3.28"
