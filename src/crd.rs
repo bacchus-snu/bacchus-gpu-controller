@@ -1,3 +1,4 @@
+use k8s_openapi::api::core::v1::ResourceQuotaSpec;
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -13,7 +14,11 @@ use serde::{Deserialize, Serialize};
     derive = "Default"
 )]
 pub struct UserBootstrapSpec {
-    // TODO
+    /// Kubernetes username
+    pub username: String,
+    /// ResourceQuota in namespace
+    pub quota: Option<ResourceQuotaSpec>,
+    pub role: Option<>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, JsonSchema)]

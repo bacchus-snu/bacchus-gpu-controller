@@ -3,6 +3,8 @@ use std::{sync::Arc, time::Duration};
 use futures::StreamExt;
 use k8s_openapi::api::core::v1::{Namespace, ResourceQuota};
 use kube::{
+    api::{Patch, PatchParams},
+    core::ObjectMeta,
     runtime::{controller::Action, watcher, Controller},
     Api, Client, Resource,
 };
@@ -11,12 +13,14 @@ use tracing::info;
 
 use bacchus_gpu_controller::crd::UserBootstrap;
 
-// const PATCH_MANAGER: &'static str = "bacchus-gpu-controller.bacchus.io";
+const PATCH_MANAGER: &'static str = "bacchus-gpu-controller.bacchus.io";
 
 #[derive(Error, Debug)]
 enum ControllerError {
     #[error("missing object key: {0}")]
     MissingObjectKey(&'static str),
+    #[error("patch failed: {0}")]
+    PatchFailed(#[source] kube::Error),
 }
 
 struct Data {
@@ -24,15 +28,64 @@ struct Data {
 }
 
 async fn reconcile(obj: Arc<UserBootstrap>, ctx: Arc<Data>) -> Result<Action, ControllerError> {
-    let _client = ctx.client.clone();
-    let _oref = obj.controller_owner_ref(&()).unwrap();
+    let client = ctx.client.clone();
+    let oref = obj.controller_owner_ref(&()).unwrap();
 
-    let ub_name = obj.metadata.name.clone().ok_or_else(|| {
+    // get name from UserBootstrap metadata
+    let name = obj.metadata.name.clone().ok_or_else(|| {
         tracing::error!("failed to get name");
         ControllerError::MissingObjectKey(".metadata.name")
     })?;
 
-    tracing::info!("reconciling {}", ub_name);
+    tracing::info!("reconciling {}", name);
+
+    // reconcile namespace
+    let ns = Namespace {
+        metadata: ObjectMeta {
+            name: Some(name.clone()),
+            owner_references: Some(vec![oref]),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let ns_api = Api::<Namespace>::all(client.clone());
+
+    ns_api
+        .patch(&name, &PatchParams::apply(PATCH_MANAGER), &Patch::Apply(ns))
+        .await
+        .map_err(|e| {
+            tracing::error!("failed to patch namespace: {}", e);
+            ControllerError::PatchFailed(e)
+        })?;
+
+    // reconcile resource quota
+    if let Some(quota_spec) = obj.spec.quota.clone() {
+        let quota = ResourceQuota {
+            metadata: ObjectMeta {
+                name: Some(name.clone()),
+                ..Default::default()
+            },
+            spec: Some(quota_spec),
+            ..Default::default()
+        };
+
+        let quota_api = Api::<ResourceQuota>::namespaced(client.clone(), &name);
+
+        quota_api
+            .patch(
+                &name,
+                &PatchParams::apply(PATCH_MANAGER),
+                &Patch::Apply(quota),
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!("failed to patch resource quota: {}", e);
+                ControllerError::PatchFailed(e)
+            })?;
+    }
+
+    // reconcile rolebinding
 
     Ok(Action::requeue(Duration::from_secs(30)))
 }
@@ -66,12 +119,13 @@ async fn main() -> anyhow::Result<()> {
     let ub_api = Api::<UserBootstrap>::all(client.clone());
     let ns_api = Api::<Namespace>::all(client.clone());
     let quota_api = Api::<ResourceQuota>::all(client.clone());
-    // TODO
+    let rolebinding_api = Api::<ResourceQuota>::all(client.clone());
 
     let data = Arc::new(Data { client });
     Controller::new(ub_api, watcher::Config::default())
         .owns(ns_api, watcher::Config::default())
         .owns(quota_api, watcher::Config::default())
+        .owns(rolebinding_api, watcher::Config::default())
         .shutdown_on_signal()
         .run(reconcile, error_policy, data)
         .for_each(|res| async move {
