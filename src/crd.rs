@@ -18,7 +18,7 @@ pub struct UserBootstrapSpec {
     pub username: String,
     /// ResourceQuota in namespace
     pub quota: Option<ResourceQuotaSpec>,
-    pub role: Option<>,
+    // TODO
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, JsonSchema)]

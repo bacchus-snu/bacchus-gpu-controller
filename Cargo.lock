@@ -123,6 +123,7 @@ dependencies = [
  "anyhow",
  "axum",
  "futures",
+ "json-patch",
  "k8s-openapi",
  "kube",
  "schemars",

@@ -85,8 +85,6 @@ async fn reconcile(obj: Arc<UserBootstrap>, ctx: Arc<Data>) -> Result<Action, Co
             })?;
     }
 
-    // reconcile rolebinding
-
     Ok(Action::requeue(Duration::from_secs(30)))
 }
 
