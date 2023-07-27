@@ -43,6 +43,8 @@ async fn reconcile(obj: Arc<UserBootstrap>, ctx: Arc<Data>) -> Result<Action, Co
 
     tracing::info!("reconciling {}", name);
 
+    let patch_params = PatchParams::apply(PATCH_MANAGER).force();
+
     // reconcile namespace
     let ns = Namespace {
         metadata: ObjectMeta {
@@ -56,7 +58,7 @@ async fn reconcile(obj: Arc<UserBootstrap>, ctx: Arc<Data>) -> Result<Action, Co
     let ns_api = Api::<Namespace>::all(client.clone());
 
     ns_api
-        .patch(&name, &PatchParams::apply(PATCH_MANAGER), &Patch::Apply(ns))
+        .patch(&name, &patch_params, &Patch::Apply(ns))
         .await
         .map_err(|e| {
             tracing::error!("failed to patch namespace: {}", e);
@@ -77,11 +79,7 @@ async fn reconcile(obj: Arc<UserBootstrap>, ctx: Arc<Data>) -> Result<Action, Co
         let quota_api = Api::<ResourceQuota>::namespaced(client.clone(), &name);
 
         quota_api
-            .patch(
-                &name,
-                &PatchParams::apply(PATCH_MANAGER),
-                &Patch::Apply(quota),
-            )
+            .patch(&name, &patch_params, &Patch::Apply(quota))
             .await
             .map_err(|e| {
                 tracing::error!("failed to patch resource quota: {}", e);
@@ -94,11 +92,7 @@ async fn reconcile(obj: Arc<UserBootstrap>, ctx: Arc<Data>) -> Result<Action, Co
         let role_api = Api::<Role>::namespaced(client.clone(), &name);
 
         role_api
-            .patch(
-                &name,
-                &PatchParams::apply(PATCH_MANAGER),
-                &Patch::Apply(role),
-            )
+            .patch(&name, &patch_params, &Patch::Apply(role))
             .await
             .map_err(|e| {
                 tracing::error!("failed to patch role: {}", e);
@@ -121,11 +115,7 @@ async fn reconcile(obj: Arc<UserBootstrap>, ctx: Arc<Data>) -> Result<Action, Co
         let rolebinding_api = Api::<RoleBinding>::namespaced(client.clone(), &name);
 
         rolebinding_api
-            .patch(
-                &name,
-                &PatchParams::apply(PATCH_MANAGER),
-                &Patch::Apply(rolebinding_with_meta),
-            )
+            .patch(&name, &patch_params, &Patch::Apply(rolebinding_with_meta))
             .await
             .map_err(|e| {
                 tracing::error!("failed to patch rolebinding: {}", e);
@@ -209,8 +199,8 @@ async fn main() -> anyhow::Result<()> {
             .run(reconcile, error_policy, data)
             .for_each(|res| async move {
                 match res {
-                    Ok(o) => println!("reconciled {:?}", o),
-                    Err(e) => eprintln!("reconcile failed: {}", e),
+                    Ok(o) => tracing::info!("reconciled {:?}", o),
+                    Err(e) => tracing::error!("reconcile failed: {}", e),
                 }
             }),
     );
