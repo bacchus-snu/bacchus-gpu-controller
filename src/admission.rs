@@ -179,7 +179,7 @@ async fn mutate_handler(
 
 fn mutate(req: &AdmissionRequest<DynamicObject>) -> Result<AdmissionResponse, Error> {
     // get username of requester
-    let req_username = match req.user_info.username {
+    let _req_username = match req.user_info.username {
         Some(ref username) => username,
         None => {
             let e = "Cannot get requester's username from request";
@@ -208,13 +208,10 @@ fn mutate(req: &AdmissionRequest<DynamicObject>) -> Result<AdmissionResponse, Er
             }
         }
         Operation::Delete => {
-            // TODO: use adequate admin name
-            if req_username != "admin" {
-                let e = "Only admin can delete UserBootstrap";
-                tracing::error!(e);
-                return Ok(resp.deny(e));
-            }
-            // early return
+            // NOTE: we are not going to deny delete operation
+            // because regular users are prevented from deleting
+            // resource by kubernetes rbac.
+            // so early return
             return Ok(resp);
         }
         // TODO: handle update?
