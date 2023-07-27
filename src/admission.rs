@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, path::Path, time::Duration};
+use std::{collections::BTreeMap, path::Path, sync::Arc, time::Duration};
 
 use axum::{
     extract,
@@ -10,7 +10,13 @@ use axum::{
 use axum_server::tls_rustls::RustlsConfig;
 use bacchus_gpu_controller::crd::UserBootstrap;
 use json_patch::{AddOperation, PatchOperation};
-use k8s_openapi::{api::core::v1::ResourceQuotaSpec, apimachinery::pkg::api::resource::Quantity};
+use k8s_openapi::{
+    api::{
+        core::v1::ResourceQuotaSpec,
+        rbac::v1::{RoleRef, Subject},
+    },
+    apimachinery::pkg::api::resource::Quantity,
+};
 use kube::core::{
     admission::{AdmissionRequest, AdmissionResponse, AdmissionReview, Operation},
     DynamicObject,
@@ -26,6 +32,8 @@ struct Config {
 
     cert_path: String,
     key_path: String,
+
+    default_role_name: String,
 }
 
 #[derive(Error, Debug)]
@@ -104,6 +112,11 @@ async fn cert_reloader(
     Ok(())
 }
 
+#[derive(Clone, Debug)]
+struct AppState {
+    config: Config,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -116,9 +129,14 @@ async fn main() -> anyhow::Result<()> {
 
     let stopper = Stopper::new();
 
+    let state = Arc::new(AppState {
+        config: config.clone(),
+    });
+
     let app = Router::new()
         .route("/mutate", post(mutate_handler))
-        .route("/health", get(|| async { "pong" }));
+        .route("/health", get(|| async { "pong" }))
+        .with_state(state);
 
     let handle = axum_server::Handle::new();
 
@@ -157,6 +175,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn mutate_handler(
+    extract::State(state): extract::State<Arc<AppState>>,
     extract::Json(req): extract::Json<AdmissionReview<DynamicObject>>,
 ) -> Result<response::Json<AdmissionReview<DynamicObject>>, Error> {
     // convert AdmissionReview to AdmissionRequest
@@ -172,14 +191,17 @@ async fn mutate_handler(
 
     tracing::info!(?req, "received admission request");
 
-    let resp = mutate(&req)?;
+    let resp = mutate(&req, &state)?;
 
     Ok(response::Json(resp.into_review()))
 }
 
-fn mutate(req: &AdmissionRequest<DynamicObject>) -> Result<AdmissionResponse, Error> {
+fn mutate(
+    req: &AdmissionRequest<DynamicObject>,
+    state: &AppState,
+) -> Result<AdmissionResponse, Error> {
     // get username of requester
-    let _req_username = match req.user_info.username {
+    let req_username = match req.user_info.username {
         Some(ref username) => username,
         None => {
             let e = "Cannot get requester's username from request";
@@ -187,6 +209,8 @@ fn mutate(req: &AdmissionRequest<DynamicObject>) -> Result<AdmissionResponse, Er
             return Ok(AdmissionResponse::invalid(e));
         }
     };
+
+    // TODO: deny if request username is not match with resource name
 
     let resp: AdmissionResponse = req.into();
 
@@ -241,6 +265,12 @@ fn mutate(req: &AdmissionRequest<DynamicObject>) -> Result<AdmissionResponse, Er
 
     let mut patches = Vec::new();
 
+    // fill kube username
+    patches.push(PatchOperation::Add(AddOperation {
+        path: "/spec/kube_username".to_string(),
+        value: serde_json::json!(req_username),
+    }));
+
     // if quota key is empty, fill it
     if ub.spec.quota.is_none() {
         patches.push(PatchOperation::Add(AddOperation {
@@ -250,7 +280,7 @@ fn mutate(req: &AdmissionRequest<DynamicObject>) -> Result<AdmissionResponse, Er
 
         // add default quota
         // TODO: use default quota from config
-        let default_quota: ResourceQuotaSpec = ResourceQuotaSpec {
+        let default_quota = ResourceQuotaSpec {
             hard: Some(BTreeMap::from_iter(vec![
                 ("requests.cpu".to_string(), Quantity("1".into())),
                 ("requests.memory".to_string(), Quantity("500Mi".into())),
@@ -262,8 +292,39 @@ fn mutate(req: &AdmissionRequest<DynamicObject>) -> Result<AdmissionResponse, Er
             path: "/spec/quota".to_string(),
             value: serde_json::to_value(default_quota).unwrap(),
         }));
-        Ok(resp.with_patch(json_patch::Patch(patches))?)
-    } else {
+    }
+
+    // if rolebinding key is empty, create default
+    if ub.spec.rolebinding.is_none() {
+        patches.push(PatchOperation::Add(AddOperation {
+            path: "/spec/rolebinding".to_string(),
+            value: serde_json::json!({}),
+        }));
+
+        // bind with default role name, with requester as subject
+        let rb = bacchus_gpu_controller::crd::RoleBinding {
+            role_ref: RoleRef {
+                name: state.config.default_role_name.to_string(),
+                api_group: "rbac.authorization.k8s.io".into(),
+                kind: "ClusterRole".into(),
+            },
+            subjects: Some(vec![Subject {
+                kind: "User".into(),
+                name: req_username.clone(),
+                api_group: Some("rbac.authorization.k8s.io".into()),
+                ..Default::default()
+            }]),
+        };
+
+        patches.push(PatchOperation::Add(AddOperation {
+            path: "/spec/rolebinding".to_string(),
+            value: serde_json::to_value(rb).unwrap(),
+        }));
+    }
+
+    if patches.is_empty() {
         Ok(resp)
+    } else {
+        Ok(resp.with_patch(json_patch::Patch(patches))?)
     }
 }
