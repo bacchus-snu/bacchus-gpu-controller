@@ -2,7 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use axum::Router;
 use futures::{FutureExt, StreamExt};
-use k8s_openapi::api::core::v1::{Namespace, ResourceQuota};
+use k8s_openapi::api::{
+    core::v1::{Namespace, ResourceQuota},
+    rbac::v1::{Role, RoleBinding},
+};
 use kube::{
     api::{Patch, PatchParams},
     core::ObjectMeta,
@@ -86,6 +89,50 @@ async fn reconcile(obj: Arc<UserBootstrap>, ctx: Arc<Data>) -> Result<Action, Co
             })?;
     }
 
+    // reconcile role
+    if let Some(role) = obj.spec.role.clone() {
+        let role_api = Api::<Role>::namespaced(client.clone(), &name);
+
+        role_api
+            .patch(
+                &name,
+                &PatchParams::apply(PATCH_MANAGER),
+                &Patch::Apply(role),
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!("failed to patch role: {}", e);
+                ControllerError::PatchFailed(e)
+            })?;
+    }
+
+    // reconcile rolebinding
+    if let Some(rolebinding) = obj.spec.rolebinding.clone() {
+        let rolebinding_with_meta = RoleBinding {
+            metadata: ObjectMeta {
+                name: Some(name.clone()),
+                ..Default::default()
+            },
+            role_ref: rolebinding.role_ref,
+            subjects: rolebinding.subjects,
+            ..Default::default()
+        };
+
+        let rolebinding_api = Api::<RoleBinding>::namespaced(client.clone(), &name);
+
+        rolebinding_api
+            .patch(
+                &name,
+                &PatchParams::apply(PATCH_MANAGER),
+                &Patch::Apply(rolebinding_with_meta),
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!("failed to patch rolebinding: {}", e);
+                ControllerError::PatchFailed(e)
+            })?;
+    }
+
     Ok(Action::requeue(Duration::from_secs(30)))
 }
 
@@ -148,13 +195,15 @@ async fn main() -> anyhow::Result<()> {
     let ub_api = Api::<UserBootstrap>::all(client.clone());
     let ns_api = Api::<Namespace>::all(client.clone());
     let quota_api = Api::<ResourceQuota>::all(client.clone());
-    let rolebinding_api = Api::<ResourceQuota>::all(client.clone());
+    let role_api = Api::<Role>::all(client.clone());
+    let rolebinding_api = Api::<RoleBinding>::all(client.clone());
 
     let data = Arc::new(Data { client });
     let controller_handle = tokio::spawn(
         Controller::new(ub_api, watcher::Config::default())
             .owns(ns_api, watcher::Config::default())
             .owns(quota_api, watcher::Config::default())
+            .owns(role_api, watcher::Config::default())
             .owns(rolebinding_api, watcher::Config::default())
             .graceful_shutdown_on(async move { signal_rx.recv().await }.map(|_| ()))
             .run(reconcile, error_policy, data)
