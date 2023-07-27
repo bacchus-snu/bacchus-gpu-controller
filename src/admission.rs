@@ -215,32 +215,37 @@ async fn mutate_handler(
     Ok(response::Json(resp.into_review()))
 }
 
-enum Username {
-    Normal(String),
-    Admin(String),
+struct Username {
+    original_username: String,
+    kube_username: String,
+    kind: UsernameKind,
+}
+
+enum UsernameKind {
+    Normal,
+    Admin,
 }
 
 impl Username {
     fn from(username: impl AsRef<str>, prefix: impl AsRef<str>) -> Self {
         if username.as_ref().starts_with(prefix.as_ref()) {
-            Username::Normal(
-                username
+            Self {
+                original_username: username.as_ref().to_string(),
+                kube_username: username
                     .as_ref()
                     .to_string()
                     .strip_prefix(prefix.as_ref())
                     .unwrap()
                     .to_string(),
-            )
+                kind: UsernameKind::Normal,
+            }
         } else {
             // if username is not prefixed with oidc prefix, assume admin user
-            Username::Admin(username.as_ref().to_string())
-        }
-    }
-
-    fn as_str(&self) -> &str {
-        match self {
-            Username::Normal(username) => username,
-            Username::Admin(username) => username,
+            Self {
+                original_username: username.as_ref().to_string(),
+                kube_username: username.as_ref().to_string(),
+                kind: UsernameKind::Admin,
+            }
         }
     }
 }
@@ -279,8 +284,8 @@ fn mutate(
     match req.operation {
         Operation::Create => {
             // if user is not in authorized group and user is normal user, deny
-            match username {
-                Username::Normal(_) if !is_in_group => {
+            match username.kind {
+                UsernameKind::Normal if !is_in_group => {
                     let e = "user is not in authorized group";
                     tracing::error!(e);
                     return Ok(resp.deny(e));
@@ -290,8 +295,8 @@ fn mutate(
         }
         Operation::Delete => {
             // if user is normal user, deny
-            match username {
-                Username::Normal(_) => {
+            match username.kind {
+                UsernameKind::Normal => {
                     let e = "normal user is not allowed to delete resource";
                     tracing::error!(e);
                     return Ok(resp.deny(e));
@@ -304,8 +309,8 @@ fn mutate(
         }
         Operation::Update => {
             // if user is normal user, deny
-            match username {
-                Username::Normal(_) => {
+            match username.kind {
+                UsernameKind::Normal => {
                     let e = "normal user is not allowed to update resource";
                     tracing::error!(e);
                     return Ok(resp.deny(e));
@@ -341,8 +346,8 @@ fn mutate(
     };
 
     // deny if username is not match with resource name
-    match username {
-        Username::Normal(_) if username.as_str() != resource_name => {
+    match username.kind {
+        UsernameKind::Normal if username.kube_username != resource_name => {
             let e = "username not match with resource name";
             tracing::error!(e);
             return Ok(resp.deny(e));
@@ -361,15 +366,15 @@ fn mutate(
 
     let mut patches = Vec::new();
 
-    match username {
-        Username::Normal(ref name) => {
+    match username.kind {
+        UsernameKind::Normal => {
             // if user is normal user, fill kube username
             patches.push(PatchOperation::Add(AddOperation {
                 path: "/spec/kube_username".to_string(),
-                value: serde_json::json!(name),
+                value: serde_json::json!(username.kube_username),
             }));
         }
-        Username::Admin(_) => {
+        UsernameKind::Admin => {
             // admin can set kube_username field to any value.
             // if kube_username is empty, deny.
             if ub.spec.kube_username.is_empty() {
@@ -403,8 +408,8 @@ fn mutate(
         }));
     } else {
         // if quota key is not empty and user is normal user, deny
-        match username {
-            Username::Normal(_) => {
+        match username.kind {
+            UsernameKind::Normal => {
                 let e = "quota field is not empty. you are a normal user, so leave it empty";
                 tracing::error!(e);
                 return Ok(resp.deny(e));
@@ -420,11 +425,11 @@ fn mutate(
             value: serde_json::json!({}),
         }));
 
-        let subject_name = match username {
+        let subject_name = match username.kind {
             // use username as subject name
-            Username::Normal(ref name) => name.clone(),
-            // use kube_username field as subject name
-            Username::Admin(_) => ub.spec.kube_username.clone(),
+            UsernameKind::Normal => username.original_username.clone(),
+            // use object's kube_username field as subject name
+            UsernameKind::Admin => ub.spec.kube_username.clone(),
         };
 
         let rb = bacchus_gpu_controller::crd::RoleBinding {
@@ -447,8 +452,8 @@ fn mutate(
         }));
     } else {
         // if rolebinding key is not empty and user is normal user, deny
-        match username {
-            Username::Normal(_) => {
+        match username.kind {
+            UsernameKind::Normal => {
                 let e = "rolebinding field is not empty. you are a normal user, so leave it empty";
                 tracing::error!(e);
                 return Ok(resp.deny(e));
