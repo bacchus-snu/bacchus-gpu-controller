@@ -20,7 +20,7 @@ controller:
 
   service:
     type: ClusterIP
-    port: 12321
+    port: 12322
 
   resources: {}
   nodeSelector: {}
@@ -69,7 +69,9 @@ admission:
     httpGet:
       path: /health
       port: http
+      scheme: HTTPS
   readinessProbe:
     httpGet:
       path: /health
       port: http
+      scheme: HTTPS
