@@ -8,7 +8,7 @@ metadata:
   annotations:
     cert-manager.io/inject-ca-from: {{ printf "%s/%s-ca" .Release.Namespace $name }}
 webhooks:
-- name: {{ $name }}-admission
+- name: {{ $name }}-admission.bacchus.io
   rules:
   - apiGroups: ["bacchus.io"]
     apiVersions: ["v1"]
