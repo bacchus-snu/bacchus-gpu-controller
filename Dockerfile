@@ -23,4 +23,4 @@ RUN cargo build --release
 # ---
 FROM docker.io/debian:stable-slim AS runtime
 
-COPY --from=builder /app/target/release/admission /app/target/release/controller /app
+COPY --from=builder /app/target/release/admission /app/target/release/controller /app/
