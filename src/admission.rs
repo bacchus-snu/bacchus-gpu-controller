@@ -8,6 +8,7 @@ use axum::{
     Router,
 };
 use bacchus_gpu_controller::crd::UserBootstrap;
+use futures::FutureExt;
 use json_patch::{AddOperation, PatchOperation};
 use k8s_openapi::{api::core::v1::ResourceQuotaSpec, apimachinery::pkg::api::resource::Quantity};
 use kube::core::{
@@ -26,18 +27,58 @@ impl response::IntoResponse for Error {
     }
 }
 
+async fn shutdown_signal(tx: tokio::sync::broadcast::Sender<()>) {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    tracing::info!("signal received, starting graceful shutdown");
+
+    tx.send(()).expect("failed to broadcast shutdown signal");
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/mutate", post(mutate_handler))
         .route("/health", get(|| async { "pong" }));
 
-    // TODO: use config
-    axum::Server::bind(&"0.0.0.0:12321".parse()?)
-        .serve(app.into_make_service())
-        .await?;
+    let (signal_tx, mut signal_rx) = tokio::sync::broadcast::channel::<()>(1);
 
-    // TODO: handle signal
+    let http_server_handle = tokio::spawn(
+        // TODO: use config
+        axum::Server::bind(&"0.0.0.0:12321".parse()?)
+            .serve(app.into_make_service())
+            .with_graceful_shutdown(async move { signal_rx.recv().await }.map(|_| ())),
+    );
+
+    // wait for signal
+    shutdown_signal(signal_tx).await;
+
+    tracing::info!("received signal. shutting down...");
+
+    // join all handles
+    let _ = tokio::try_join!(http_server_handle)?;
+
+    tracing::info!("admission controller gracefully shutted down");
 
     Ok(())
 }
