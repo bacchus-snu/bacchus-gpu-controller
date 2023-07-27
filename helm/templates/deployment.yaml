@@ -33,6 +33,8 @@ spec:
             {{- toYaml $ctx.securityContext | nindent 12 }}
           image: "{{ $ctx.image.repository }}:{{ $ctx.image.tag | default $.Chart.AppVersion }}"
           imagePullPolicy: {{ $ctx.image.pullPolicy }}
+          command:
+            - "/app/controller"
           env:
             - name: RUST_LOG
               value: "info"
@@ -98,6 +100,8 @@ spec:
             {{- toYaml $ctx.securityContext | nindent 12 }}
           image: "{{ $ctx.image.repository }}:{{ $ctx.image.tag | default $.Chart.AppVersion }}"
           imagePullPolicy: {{ $ctx.image.pullPolicy }}
+          command:
+            - "/app/admission"
           env:
             - name: RUST_LOG
               value: "info"
