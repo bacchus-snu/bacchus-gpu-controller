@@ -1,0 +1,123 @@
+{{- $ctx := get .Values "controller" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bacchus-gpu.fullname" . }}-controller
+  labels:
+    {{- include "bacchus-gpu.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $ctx.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "bacchus-gpu.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with $ctx.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "bacchus-gpu.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with $ctx.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "bacchus-gpu.fullname" . }}-controller
+      securityContext:
+        {{- toYaml $ctx.podSecurityContext | nindent 8 }}
+      containers:
+        - name: controller
+          securityContext:
+            {{- toYaml $ctx.securityContext | nindent 12 }}
+          image: "{{ $ctx.image.repository }}:{{ $ctx.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $ctx.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $ctx.service.port }}
+              protocol: TCP
+          {{- with $ctx.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $ctx.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml $ctx.resources | nindent 12 }}
+      {{- with $ctx.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $ctx.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $ctx.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+
+{{- $ctx := get .Values "admission" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bacchus-gpu.fullname" . }}-admission
+  labels:
+    {{- include "bacchus-gpu.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $ctx.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "bacchus-gpu.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with $ctx.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "bacchus-gpu.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with $ctx.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "bacchus-gpu.fullname" . }}-admission
+      securityContext:
+        {{- toYaml $ctx.podSecurityContext | nindent 8 }}
+      containers:
+        - name: admission
+          securityContext:
+            {{- toYaml $ctx.securityContext | nindent 12 }}
+          image: "{{ $ctx.image.repository }}:{{ $ctx.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $ctx.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $ctx.service.port }}
+              protocol: TCP
+          {{- with $ctx.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $ctx.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml $ctx.resources | nindent 12 }}
+      {{- with $ctx.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $ctx.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $ctx.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
