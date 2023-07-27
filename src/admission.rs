@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::Path, time::Duration};
 
 use axum::{
     extract,
@@ -7,18 +7,32 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use axum_server::tls_rustls::RustlsConfig;
 use bacchus_gpu_controller::crd::UserBootstrap;
-use futures::FutureExt;
 use json_patch::{AddOperation, PatchOperation};
 use k8s_openapi::{api::core::v1::ResourceQuotaSpec, apimachinery::pkg::api::resource::Quantity};
 use kube::core::{
     admission::{AdmissionRequest, AdmissionResponse, AdmissionReview, Operation},
     DynamicObject,
 };
+use serde::Deserialize;
+use stopper::Stopper;
 use thiserror::Error;
 
+#[derive(Clone, Debug, Deserialize)]
+struct Config {
+    listen_addr: String,
+    listen_port: u16,
+
+    cert_path: String,
+    key_path: String,
+}
+
 #[derive(Error, Debug)]
-enum Error {}
+enum Error {
+    #[error("failed to read cert: {0}")]
+    CertReadError(#[from] std::io::Error),
+}
 
 impl response::IntoResponse for Error {
     fn into_response(self) -> response::Response {
@@ -27,7 +41,7 @@ impl response::IntoResponse for Error {
     }
 }
 
-async fn shutdown_signal(tx: tokio::sync::broadcast::Sender<()>) {
+async fn shutdown_signal(handle: axum_server::Handle, stopper: Stopper) {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -52,33 +66,84 @@ async fn shutdown_signal(tx: tokio::sync::broadcast::Sender<()>) {
 
     tracing::info!("signal received, starting graceful shutdown");
 
-    tx.send(()).expect("failed to broadcast shutdown signal");
+    stopper.stop();
+    handle.graceful_shutdown(Some(Duration::from_secs(10)));
+}
+
+async fn get_cert_hash(cert: impl AsRef<Path>, key: impl AsRef<Path>) -> Result<String, Error> {
+    let cert_content = tokio::fs::read(cert).await?;
+    let key_content = tokio::fs::read(key).await?;
+
+    Ok(sha256::digest(&[cert_content, key_content].concat()))
+}
+
+// very simple cert reloader based on file content hash
+async fn cert_reloader(
+    cert: impl AsRef<Path>,
+    key: impl AsRef<Path>,
+    tls_config: RustlsConfig,
+    stopper: Stopper,
+) -> Result<(), Error> {
+    // get initial hash
+    let mut hash = get_cert_hash(&cert, &key).await?;
+    let mut interval = tokio::time::interval(Duration::from_secs(60));
+    while let Some(_) = stopper.stop_future(interval.tick()).await {
+        // calc new hash
+        let new_hash = get_cert_hash(&cert, &key).await?;
+        // if hash is different, reload cert
+        if hash != new_hash {
+            tracing::info!("cert changed, reloading...");
+            tls_config.reload_from_pem_file(&cert, &key).await?;
+            tracing::info!("cert reloading done.");
+            hash = new_hash;
+        }
+    }
+
+    Ok(())
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
+
+    // read config from env
+    let config = envy::prefixed("CONF_").from_env::<Config>()?;
+
+    // prepare tls server config
+    let tls_config = RustlsConfig::from_pem_file(&config.cert_path, &config.key_path).await?;
+
+    let stopper = Stopper::new();
+
     let app = Router::new()
         .route("/mutate", post(mutate_handler))
         .route("/health", get(|| async { "pong" }));
 
-    let (signal_tx, mut signal_rx) = tokio::sync::broadcast::channel::<()>(1);
+    let handle = axum_server::Handle::new();
 
-    let http_server_handle = tokio::spawn(
-        // TODO: use config
-        axum::Server::bind(&"0.0.0.0:12321".parse()?)
-            .serve(app.into_make_service())
-            .with_graceful_shutdown(async move { signal_rx.recv().await }.map(|_| ())),
-    );
+    // start cert reloader
+    tokio::spawn(cert_reloader(
+        config.cert_path.clone(),
+        config.key_path.clone(),
+        tls_config.clone(),
+        stopper.clone(),
+    ));
 
     // wait for signal
-    shutdown_signal(signal_tx).await;
+    let signal_future = shutdown_signal(handle.clone(), stopper);
+    tokio::spawn(async move {
+        signal_future.await;
+    });
+
+    // start tls-enabled http server
+    axum_server::bind_rustls(
+        format!("{}:{}", config.listen_addr, config.listen_port).parse()?,
+        tls_config,
+    )
+    .handle(handle.clone())
+    .serve(app.into_make_service())
+    .await?;
 
     tracing::info!("received signal. shutting down...");
-
-    // join all handles
-    let _ = tokio::try_join!(http_server_handle)?;
-
-    tracing::info!("admission controller gracefully shutted down");
 
     Ok(())
 }
