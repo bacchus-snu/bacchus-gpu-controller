@@ -1,9 +1,9 @@
 controller:
   replicaCount: 1
   image:
-    repository: nginx
-    pullPolicy: IfNotPresent
-    tag: ""
+    repository: "ghcr.io/skystar-p/bacchus-gpu-controller"
+    pullPolicy: Always
+    tag: "latest"
 
   imagePullSecrets: []
   nameOverride: ""
@@ -39,9 +39,9 @@ controller:
 admission:
   replicaCount: 2
   image:
-    repository: nginx
-    pullPolicy: IfNotPresent
-    tag: ""
+    repository: "ghcr.io/skystar-p/bacchus-gpu-controller"
+    pullPolicy: Always
+    tag: "latest"
 
   imagePullSecrets: []
   nameOverride: ""
