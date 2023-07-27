@@ -33,7 +33,26 @@ struct Config {
     cert_path: String,
     key_path: String,
 
+    // this will be used to tell the user is authenticated with oidc
+    // which means that the user is not an admin
+    // also, username stripped of this prefix will be used as the actual username.
+    oidc_username_prefix: String,
+
     default_role_name: String,
+    #[serde(deserialize_with = "comma_seperated_deserialize")]
+    // group name list that will be used to determine if the user is authorized or not
+    groups: Vec<String>,
+}
+
+fn comma_seperated_deserialize<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let str_sequence = String::deserialize(deserializer)?;
+    Ok(str_sequence
+        .split(',')
+        .map(|item| item.to_owned())
+        .collect())
 }
 
 #[derive(Error, Debug)]
@@ -196,51 +215,108 @@ async fn mutate_handler(
     Ok(response::Json(resp.into_review()))
 }
 
+enum Username {
+    Normal(String),
+    Admin(String),
+}
+
+impl Username {
+    fn from(username: impl AsRef<str>, prefix: impl AsRef<str>) -> Self {
+        if username.as_ref().starts_with(prefix.as_ref()) {
+            Username::Normal(
+                username
+                    .as_ref()
+                    .to_string()
+                    .strip_prefix(prefix.as_ref())
+                    .unwrap()
+                    .to_string(),
+            )
+        } else {
+            // if username is not prefixed with oidc prefix, assume admin user
+            Username::Admin(username.as_ref().to_string())
+        }
+    }
+
+    fn as_str(&self) -> &str {
+        match self {
+            Username::Normal(username) => username,
+            Username::Admin(username) => username,
+        }
+    }
+}
+
 fn mutate(
     req: &AdmissionRequest<DynamicObject>,
     state: &AppState,
 ) -> Result<AdmissionResponse, Error> {
-    // get username of requester
-    let req_username = match req.user_info.username {
-        Some(ref username) => username,
-        None => {
-            let e = "Cannot get requester's username from request";
-            tracing::error!(e);
-            return Ok(AdmissionResponse::invalid(e));
-        }
-    };
+    // check if username is prefixed with oidc prefix
+    let username = {
+        // get username of requester
+        let req_username = match req.user_info.username {
+            Some(ref username) => username,
+            None => {
+                let e = "cannot get requester's username from request";
+                tracing::error!(e);
+                return Ok(AdmissionResponse::invalid(e));
+            }
+        };
 
-    // TODO: deny if request username is not match with resource name
+        Username::from(req_username, &state.config.oidc_username_prefix)
+    };
 
     let resp: AdmissionResponse = req.into();
 
+    // check if user is in authorized group
+    let is_in_group = req
+        .user_info
+        .groups
+        .clone()
+        .unwrap_or_default()
+        .iter()
+        .map(|group| state.config.groups.contains(group))
+        .any(|is_in_group| is_in_group);
+
     match req.operation {
         Operation::Create => {
-            // check if user is in gpu group
-            let is_in_group = req
-                .user_info
-                .groups
-                .clone()
-                .unwrap_or_default()
-                // TODO: use group name from config
-                .contains(&"gpu".to_string());
-
-            if !is_in_group {
-                let e = "User is not in gpu group";
-                tracing::error!(e);
-                return Ok(resp.deny(e));
+            // if user is not in authorized group and user is normal user, deny
+            match username {
+                Username::Normal(_) if !is_in_group => {
+                    let e = "user is not in authorized group";
+                    tracing::error!(e);
+                    return Ok(resp.deny(e));
+                }
+                _ => {}
             }
         }
         Operation::Delete => {
-            // NOTE: we are not going to deny delete operation
-            // because regular users are prevented from deleting
-            // resource by kubernetes rbac.
-            // so early return
+            // if user is normal user, deny
+            match username {
+                Username::Normal(_) => {
+                    let e = "normal user is not allowed to delete resource";
+                    tracing::error!(e);
+                    return Ok(resp.deny(e));
+                }
+                _ => {}
+            }
+
+            // early return
             return Ok(resp);
         }
-        // TODO: handle update?
+        Operation::Update => {
+            // if user is normal user, deny
+            match username {
+                Username::Normal(_) => {
+                    let e = "normal user is not allowed to update resource";
+                    tracing::error!(e);
+                    return Ok(resp.deny(e));
+                }
+                _ => {}
+            }
+
+            // continue processing
+        }
         _ => {
-            let e = "Invalid operation";
+            let e = "invalid operation";
             tracing::error!(e);
             return Ok(AdmissionResponse::invalid(e));
         }
@@ -254,6 +330,26 @@ fn mutate(
         return Ok(resp);
     };
 
+    // get resource name
+    let resource_name = match obj.metadata.name.clone() {
+        Some(name) => name,
+        None => {
+            let e = "cannot get resource name from request";
+            tracing::error!(e);
+            return Ok(AdmissionResponse::invalid(e));
+        }
+    };
+
+    // deny if username is not match with resource name
+    match username {
+        Username::Normal(_) if username.as_str() != resource_name => {
+            let e = "username not match with resource name";
+            tracing::error!(e);
+            return Ok(resp.deny(e));
+        }
+        _ => {}
+    }
+
     // parse request object
     let ub: UserBootstrap = match obj.clone().try_parse() {
         Ok(ub) => ub,
@@ -265,11 +361,24 @@ fn mutate(
 
     let mut patches = Vec::new();
 
-    // fill kube username
-    patches.push(PatchOperation::Add(AddOperation {
-        path: "/spec/kube_username".to_string(),
-        value: serde_json::json!(req_username),
-    }));
+    match username {
+        Username::Normal(ref name) => {
+            // if user is normal user, fill kube username
+            patches.push(PatchOperation::Add(AddOperation {
+                path: "/spec/kube_username".to_string(),
+                value: serde_json::json!(name),
+            }));
+        }
+        Username::Admin(_) => {
+            // admin can set kube_username field to any value.
+            // if kube_username is empty, deny.
+            if ub.spec.kube_username.is_empty() {
+                let e = "kube_username field is empty. you are an admin, so fill it";
+                tracing::error!(e);
+                return Ok(resp.deny(e));
+            }
+        }
+    }
 
     // if quota key is empty, fill it
     if ub.spec.quota.is_none() {
@@ -292,6 +401,16 @@ fn mutate(
             path: "/spec/quota".to_string(),
             value: serde_json::to_value(default_quota).unwrap(),
         }));
+    } else {
+        // if quota key is not empty and user is normal user, deny
+        match username {
+            Username::Normal(_) => {
+                let e = "quota field is not empty. you are a normal user, so leave it empty";
+                tracing::error!(e);
+                return Ok(resp.deny(e));
+            }
+            _ => {}
+        }
     }
 
     // if rolebinding key is empty, create default
@@ -301,7 +420,13 @@ fn mutate(
             value: serde_json::json!({}),
         }));
 
-        // bind with default role name, with requester as subject
+        let subject_name = match username {
+            // use username as subject name
+            Username::Normal(ref name) => name.clone(),
+            // use kube_username field as subject name
+            Username::Admin(_) => ub.spec.kube_username.clone(),
+        };
+
         let rb = bacchus_gpu_controller::crd::RoleBinding {
             role_ref: RoleRef {
                 name: state.config.default_role_name.to_string(),
@@ -310,7 +435,7 @@ fn mutate(
             },
             subjects: Some(vec![Subject {
                 kind: "User".into(),
-                name: req_username.clone(),
+                name: subject_name,
                 api_group: Some("rbac.authorization.k8s.io".into()),
                 ..Default::default()
             }]),
@@ -320,6 +445,16 @@ fn mutate(
             path: "/spec/rolebinding".to_string(),
             value: serde_json::to_value(rb).unwrap(),
         }));
+    } else {
+        // if rolebinding key is not empty and user is normal user, deny
+        match username {
+            Username::Normal(_) => {
+                let e = "rolebinding field is not empty. you are a normal user, so leave it empty";
+                tracing::error!(e);
+                return Ok(resp.deny(e));
+            }
+            _ => {}
+        }
     }
 
     if patches.is_empty() {
