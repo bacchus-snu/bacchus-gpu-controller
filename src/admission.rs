@@ -1,6 +1,12 @@
 use std::collections::BTreeMap;
 
-use axum::{extract, http::StatusCode, response, routing::post, Router};
+use axum::{
+    extract,
+    http::StatusCode,
+    response,
+    routing::{get, post},
+    Router,
+};
 use bacchus_gpu_controller::crd::UserBootstrap;
 use json_patch::{AddOperation, PatchOperation};
 use k8s_openapi::{api::core::v1::ResourceQuotaSpec, apimachinery::pkg::api::resource::Quantity};
@@ -22,7 +28,9 @@ impl response::IntoResponse for Error {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let app = Router::new().route("/mutate", post(mutate_handler));
+    let app = Router::new()
+        .route("/mutate", post(mutate_handler))
+        .route("/health", get(ping_handler));
 
     // TODO: use config
     axum::Server::bind(&"0.0.0.0:12321".parse()?)
@@ -32,6 +40,10 @@ async fn main() -> anyhow::Result<()> {
     // TODO: handle signal
 
     Ok(())
+}
+
+async fn ping_handler() -> &'static str {
+    "pong"
 }
 
 async fn mutate_handler(
