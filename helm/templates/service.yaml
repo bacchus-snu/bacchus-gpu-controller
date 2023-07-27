@@ -1,7 +1,8 @@
+{{- $name := include "bacchus-gpu.fullname" . }}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "bacchus-gpu.fullname" . }}-admission
+  name: {{ $name }}-admission
   labels:
     {{- include "bacchus-gpu.labels" . | nindent 4 }}
 spec:
