@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
-use futures::StreamExt;
+use axum::Router;
+use futures::{FutureExt, StreamExt};
 use k8s_openapi::api::core::v1::{Namespace, ResourceQuota};
 use kube::{
     api::{Patch, PatchParams},
@@ -108,9 +109,39 @@ fn error_policy(obj: Arc<UserBootstrap>, error: &ControllerError, _ctx: Arc<Data
     Action::requeue(Duration::from_secs(3))
 }
 
+async fn shutdown_signal(tx: tokio::sync::broadcast::Sender<()>) {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    tracing::info!("signal received, starting graceful shutdown");
+
+    tx.send(()).expect("failed to broadcast shutdown signal");
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
+
+    let (signal_tx, mut signal_rx) = tokio::sync::broadcast::channel::<()>(1);
 
     let client = Client::try_default().await?;
 
@@ -120,21 +151,39 @@ async fn main() -> anyhow::Result<()> {
     let rolebinding_api = Api::<ResourceQuota>::all(client.clone());
 
     let data = Arc::new(Data { client });
-    Controller::new(ub_api, watcher::Config::default())
-        .owns(ns_api, watcher::Config::default())
-        .owns(quota_api, watcher::Config::default())
-        .owns(rolebinding_api, watcher::Config::default())
-        .shutdown_on_signal()
-        .run(reconcile, error_policy, data)
-        .for_each(|res| async move {
-            match res {
-                Ok(o) => println!("reconciled {:?}", o),
-                Err(e) => eprintln!("reconcile failed: {}", e),
-            }
-        })
-        .await;
+    let controller_handle = tokio::spawn(
+        Controller::new(ub_api, watcher::Config::default())
+            .owns(ns_api, watcher::Config::default())
+            .owns(quota_api, watcher::Config::default())
+            .owns(rolebinding_api, watcher::Config::default())
+            .graceful_shutdown_on(async move { signal_rx.recv().await }.map(|_| ()))
+            .run(reconcile, error_policy, data)
+            .for_each(|res| async move {
+                match res {
+                    Ok(o) => println!("reconciled {:?}", o),
+                    Err(e) => eprintln!("reconcile failed: {}", e),
+                }
+            }),
+    );
 
-    info!("controller shutting down");
+    let mut signal_rx = signal_tx.subscribe();
+    // create health check endpoint
+    let app = Router::new().route("/health", axum::routing::get(|| async { "pong" }));
+    let http_server_handle = tokio::spawn(
+        axum::Server::bind(&"0.0.0.0:12322".parse()?)
+            .serve(app.into_make_service())
+            .with_graceful_shutdown(async move { signal_rx.recv().await }.map(|_| ())),
+    );
+
+    // wait for signal
+    shutdown_signal(signal_tx).await;
+
+    info!("received signal. shutting down...");
+
+    // join all handles
+    let _ = tokio::try_join!(controller_handle, http_server_handle)?;
+
+    info!("controller gracefully shutted down");
 
     Ok(())
 }
