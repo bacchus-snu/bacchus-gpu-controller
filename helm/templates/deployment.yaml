@@ -113,6 +113,12 @@ spec:
               value: "/cert/tls.crt"
             - name: CONF_KEY_PATH
               value: "/cert/tls.key"
+            - name: CONF_OIDC_USERNAME_PREFIX
+              value: "oidc:"
+            - name: CONF_DEFAULT_ROLE_NAME
+              value: "edit"
+            - name: CONF_GROUPS
+              value: "gpu,admin"
           volumeMounts:
             - name: cert
               mountPath: /cert
