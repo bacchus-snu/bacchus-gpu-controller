@@ -32,6 +32,8 @@ struct Config {
 enum Error {
     #[error("failed to read cert: {0}")]
     CertReadError(#[from] std::io::Error),
+    #[error("failed to serialize patch: {0}")]
+    SerializePatchError(#[from] kube::core::admission::SerializePatchError),
 }
 
 impl response::IntoResponse for Error {
@@ -134,7 +136,11 @@ async fn main() -> anyhow::Result<()> {
         signal_future.await;
     });
 
-    tracing::info!("starting tls server on {}:{}", config.listen_addr, config.listen_port);
+    tracing::info!(
+        "starting tls server on {}:{}",
+        config.listen_addr,
+        config.listen_port
+    );
 
     // start tls-enabled http server
     axum_server::bind_rustls(
@@ -259,7 +265,8 @@ fn mutate(req: &AdmissionRequest<DynamicObject>) -> Result<AdmissionResponse, Er
             path: "/spec/quota/hard".to_string(),
             value: serde_json::to_value(default_quota).unwrap(),
         }));
+        Ok(resp.with_patch(json_patch::Patch(patches))?)
+    } else {
+        Ok(resp)
     }
-
-    Ok(resp)
 }
