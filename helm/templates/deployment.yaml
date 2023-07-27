@@ -1,8 +1,9 @@
+{{- $name := include "bacchus-gpu.fullname" . }}
 {{- $ctx := get .Values "controller" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "bacchus-gpu.fullname" . }}-controller
+  name: {{ $name }}-controller
   labels:
     {{- include "bacchus-gpu.labels" . | nindent 4 }}
 spec:
@@ -23,7 +24,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "bacchus-gpu.fullname" . }}-controller
+      serviceAccountName: {{ $name }}-controller
       securityContext:
         {{- toYaml $ctx.podSecurityContext | nindent 8 }}
       containers:
@@ -32,6 +33,9 @@ spec:
             {{- toYaml $ctx.securityContext | nindent 12 }}
           image: "{{ $ctx.image.repository }}:{{ $ctx.image.tag | default $.Chart.AppVersion }}"
           imagePullPolicy: {{ $ctx.image.pullPolicy }}
+          env:
+            - name: RUST_LOG
+              value: "info"
           ports:
             - name: http
               containerPort: {{ $ctx.service.port }}
@@ -64,7 +68,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "bacchus-gpu.fullname" . }}-admission
+  name: {{ $name }}-admission
   labels:
     {{- include "bacchus-gpu.labels" . | nindent 4 }}
 spec:
@@ -85,7 +89,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "bacchus-gpu.fullname" . }}-admission
+      serviceAccountName: {{ $name }}-admission
       securityContext:
         {{- toYaml $ctx.podSecurityContext | nindent 8 }}
       containers:
@@ -94,6 +98,21 @@ spec:
             {{- toYaml $ctx.securityContext | nindent 12 }}
           image: "{{ $ctx.image.repository }}:{{ $ctx.image.tag | default $.Chart.AppVersion }}"
           imagePullPolicy: {{ $ctx.image.pullPolicy }}
+          env:
+            - name: RUST_LOG
+              value: "info"
+            - name: CONF_LISTEN_ADDR
+              value: "0.0.0.0"
+            - name: CONF_LISTEN_PORT
+              value: "12321"
+            - name: CONF_CERT_PATH
+              value: "/cert/tls.crt"
+            - name: CONF_KEY_PATH
+              value: "/cert/tls.key"
+          volumeMounts:
+            - name: cert
+              mountPath: /cert
+              readOnly: true
           ports:
             - name: http
               containerPort: {{ $ctx.service.port }}
@@ -108,6 +127,10 @@ spec:
           {{- end }}
           resources:
             {{- toYaml $ctx.resources | nindent 12 }}
+      volumes:
+        - name: cert
+          secret:
+            secretName: {{ $name }}-cert
       {{- with $ctx.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
