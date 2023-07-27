@@ -30,7 +30,7 @@ impl response::IntoResponse for Error {
 async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/mutate", post(mutate_handler))
-        .route("/health", get(ping_handler));
+        .route("/health", get(|| async { "pong" }));
 
     // TODO: use config
     axum::Server::bind(&"0.0.0.0:12321".parse()?)
@@ -40,10 +40,6 @@ async fn main() -> anyhow::Result<()> {
     // TODO: handle signal
 
     Ok(())
-}
-
-async fn ping_handler() -> &'static str {
-    "pong"
 }
 
 async fn mutate_handler(
