@@ -2,6 +2,8 @@ name: ci
 
 on:
   push:
+    branches:
+      - "main"
     tags:
       - "v*"
 
@@ -28,18 +30,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Metadata
-        id: meta
-        uses: docker/metadata-action@v4
-        with:
-          images: |
-            ghcr.io/skystar-p/bacchus-gpu-controller
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-          flavor:
-            latest=auto
+      # - name: Metadata
+      #   id: meta
+      #   uses: docker/metadata-action@v4
+      #   with:
+      #     images: |
+      #       ghcr.io/skystar-p/bacchus-gpu-controller
+      #     tags: |
+      #       type=semver,pattern={{version}}
+      #       type=semver,pattern={{major}}.{{minor}}
+      #       type=semver,pattern={{major}}
+      #     flavor:
+      #       latest=auto
 
       - name: Build and push
         uses: docker/build-push-action@v4
@@ -49,5 +51,6 @@ jobs:
           push: true
           cache-to: type=gha,mode=max
           cache-from: type=gha,mode=max
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ghcr.io/skystar-p/bacchus-gpu-controller:latest
+          # tags: ${{ steps.meta.outputs.tags }}
+          # labels: ${{ steps.meta.outputs.labels }}
