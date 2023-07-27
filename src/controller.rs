@@ -169,8 +169,11 @@ async fn main() -> anyhow::Result<()> {
     let mut signal_rx = signal_tx.subscribe();
     // create health check endpoint
     let app = Router::new().route("/health", axum::routing::get(|| async { "pong" }));
+
+    let addr = "0.0.0.0:12322";
+    tracing::info!("starting server on {}", addr);
     let http_server_handle = tokio::spawn(
-        axum::Server::bind(&"0.0.0.0:12322".parse()?)
+        axum::Server::bind(&addr.parse()?)
             .serve(app.into_make_service())
             .with_graceful_shutdown(async move { signal_rx.recv().await }.map(|_| ())),
     );

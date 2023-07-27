@@ -134,6 +134,8 @@ async fn main() -> anyhow::Result<()> {
         signal_future.await;
     });
 
+    tracing::info!("starting tls server on {}:{}", config.listen_addr, config.listen_port);
+
     // start tls-enabled http server
     axum_server::bind_rustls(
         format!("{}:{}", config.listen_addr, config.listen_port).parse()?,
@@ -161,6 +163,8 @@ async fn mutate_handler(
             ));
         }
     };
+
+    tracing::info!(?req, "received admission request");
 
     let resp = mutate(&req)?;
 
