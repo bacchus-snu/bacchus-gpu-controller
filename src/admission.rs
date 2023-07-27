@@ -259,7 +259,7 @@ fn mutate(req: &AdmissionRequest<DynamicObject>) -> Result<AdmissionResponse, Er
         };
 
         patches.push(PatchOperation::Add(AddOperation {
-            path: "/spec/quota/hard".to_string(),
+            path: "/spec/quota".to_string(),
             value: serde_json::to_value(default_quota).unwrap(),
         }));
         Ok(resp.with_patch(json_patch::Patch(patches))?)
