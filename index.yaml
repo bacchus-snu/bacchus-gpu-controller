@@ -3,6 +3,16 @@ entries:
   bacchus-gpu:
   - apiVersion: v2
     appVersion: 0.1.0
+    created: "2023-07-28T04:53:10.888353275Z"
+    description: A Helm chart for bacchus GPU server
+    digest: 414d972e4bc0043f9c0c0dce42aed55f2e8354834ad22bca1eadefe5eb2ba404
+    name: bacchus-gpu
+    type: application
+    urls:
+    - https://github.com/bacchus-snu/bacchus-gpu-controller/releases/download/bacchus-gpu-0.2.1/bacchus-gpu-0.2.1.tgz
+    version: 0.2.1
+  - apiVersion: v2
+    appVersion: 0.1.0
     created: "2023-07-28T04:27:05.010358166Z"
     description: A Helm chart for bacchus GPU server
     digest: fa3e041bc388a8b6fb38302690a135fa9f6d94d6f7c16bf94c04eb4372abd20f
@@ -21,4 +31,4 @@ entries:
     urls:
     - https://github.com/bacchus-snu/bacchus-gpu-controller/releases/download/bacchus-gpu-0.1.0/bacchus-gpu-0.1.0.tgz
     version: 0.1.0
-generated: "2023-07-28T04:27:05.010369166Z"
+generated: "2023-07-28T04:53:10.888363775Z"
