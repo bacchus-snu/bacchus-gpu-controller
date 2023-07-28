@@ -2,6 +2,9 @@
 
 GPU controller toolkit for Bacchus GPU servers.
 
+## Prerequisites
+* [cert-manager](https://cert-manager.io/) installed on target cluster
+
 ## Build
 
 ```sh
