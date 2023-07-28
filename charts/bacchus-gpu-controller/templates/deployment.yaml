@@ -37,7 +37,11 @@ spec:
             - "/app/controller"
           env:
             - name: RUST_LOG
-              value: "info"
+              value: {{ $ctx.configs.rust_log | quote }}
+            - name: CONF_LISTEN_ADDR
+              value: "0.0.0.0"
+            - name: CONF_LISTEN_PORT
+              value: {{ $ctx.service.port | quote }}
           ports:
             - name: http
               containerPort: {{ $ctx.service.port }}
@@ -104,21 +108,21 @@ spec:
             - "/app/admission"
           env:
             - name: RUST_LOG
-              value: "info"
+              value: {{ $ctx.configs.rust_log | quote }}
             - name: CONF_LISTEN_ADDR
               value: "0.0.0.0"
             - name: CONF_LISTEN_PORT
-              value: "12321"
+              value: {{ $ctx.service.port | quote }}
             - name: CONF_CERT_PATH
               value: "/cert/tls.crt"
             - name: CONF_KEY_PATH
               value: "/cert/tls.key"
             - name: CONF_OIDC_USERNAME_PREFIX
-              value: "oidc:"
+              value: {{ $ctx.configs.oidc_username_prefix | quote }}
             - name: CONF_DEFAULT_ROLE_NAME
-              value: "edit"
-            - name: CONF_GROUPS
-              value: "gpu,admin"
+              value: {{ $ctx.configs.default_role_name | quote }}
+            - name: CONF_AUTHORIZED_GROUP_NAMES
+              value: {{ $ctx.configs.authorized_group_names | quote }}
           volumeMounts:
             - name: cert
               mountPath: /cert

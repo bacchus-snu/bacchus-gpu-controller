@@ -36,6 +36,9 @@ controller:
       path: /health
       port: http
 
+  configs:
+    rust_log: "info"
+
 admission:
   replicaCount: 2
   image:
@@ -75,3 +78,10 @@ admission:
       path: /health
       port: http
       scheme: HTTPS
+
+  configs:
+    rust_log: "info"
+    oidc_username_prefix: "oidc:"
+    default_role_name: "edit"
+    # comma-separated group list
+    authorized_group_names: "gpu,admin"
