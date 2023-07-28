@@ -49,3 +49,10 @@ Selector labels
 app.kubernetes.io/name: {{ include "bacchus-gpu.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+Comma-separated authorized group names
+*/}}
+{{- define "bacchus-gpu.authorizedGroupNamesWithCommas" }}
+{{- join "," .Values.admission.configs.authorized_group_names }}
+{{- end }}

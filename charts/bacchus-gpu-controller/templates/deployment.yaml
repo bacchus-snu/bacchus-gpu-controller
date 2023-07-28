@@ -122,7 +122,7 @@ spec:
             - name: CONF_DEFAULT_ROLE_NAME
               value: {{ $ctx.configs.default_role_name | quote }}
             - name: CONF_AUTHORIZED_GROUP_NAMES
-              value: {{ $ctx.configs.authorized_group_names | quote }}
+              value: "{{- include "bacchus-gpu.authorizedGroupNamesWithCommas" . }}"
           volumeMounts:
             - name: cert
               mountPath: /cert
