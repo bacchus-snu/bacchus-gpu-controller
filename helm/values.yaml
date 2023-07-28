@@ -1,7 +1,7 @@
 controller:
   replicaCount: 1
   image:
-    repository: "ghcr.io/skystar-p/bacchus-gpu-controller"
+    repository: "ghcr.io/bacchus-snu/bacchus-gpu-controller"
     pullPolicy: Always
     tag: "latest"
 
@@ -39,7 +39,7 @@ controller:
 admission:
   replicaCount: 2
   image:
-    repository: "ghcr.io/skystar-p/bacchus-gpu-controller"
+    repository: "ghcr.io/bacchus-snu/bacchus-gpu-controller"
     pullPolicy: Always
     tag: "latest"
 
