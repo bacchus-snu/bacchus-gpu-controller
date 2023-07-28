@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 )]
 pub struct UserBootstrapSpec {
     /// Kubernetes username
-    pub kube_username: String,
+    pub kube_username: Option<String>,
     /// ResourceQuota in namespace
     pub quota: Option<ResourceQuotaSpec>,
     /// Role in namespace. Optional.

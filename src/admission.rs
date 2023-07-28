@@ -365,7 +365,13 @@ fn mutate(
         UsernameKind::Admin => {
             // admin can set kube_username field to any value.
             // if kube_username is empty, deny.
-            if ub.spec.kube_username.is_empty() {
+            if ub
+                .spec
+                .kube_username
+                .clone()
+                .unwrap_or("".to_string())
+                .is_empty()
+            {
                 let e = "kube_username field is empty. you are an admin, so fill it";
                 tracing::error!(e);
                 return Ok(resp.deny(e));
@@ -414,7 +420,7 @@ fn mutate(
             // use username as subject name
             UsernameKind::Normal => username.original_username,
             // use object's kube_username field as subject name
-            UsernameKind::Admin => ub.spec.kube_username,
+            UsernameKind::Admin => ub.spec.kube_username.clone().unwrap(),
         };
 
         let rb = bacchus_gpu_controller::crd::RoleBinding {
