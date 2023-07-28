@@ -12,12 +12,19 @@ use kube::{
     runtime::{controller::Action, watcher, Controller},
     Api, Client, Resource,
 };
+use serde::Deserialize;
 use thiserror::Error;
 use tracing::info;
 
 use bacchus_gpu_controller::crd::UserBootstrap;
 
 const PATCH_MANAGER: &str = "bacchus-gpu-controller.bacchus.io";
+
+#[derive(Clone, Debug, Deserialize)]
+struct Config {
+    listen_addr: String,
+    listen_port: u16,
+}
 
 #[derive(Error, Debug)]
 enum ControllerError {
@@ -177,6 +184,9 @@ async fn shutdown_signal(tx: tokio::sync::broadcast::Sender<()>) {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
+    // read config from env
+    let config = envy::prefixed("CONF_").from_env::<Config>()?;
+
     let (signal_tx, mut signal_rx) = tokio::sync::broadcast::channel::<()>(1);
 
     let client = Client::try_default().await?;
@@ -208,7 +218,7 @@ async fn main() -> anyhow::Result<()> {
     // create health check endpoint
     let app = Router::new().route("/health", axum::routing::get(|| async { "pong" }));
 
-    let addr = "0.0.0.0:12322";
+    let addr = format!("{}:{}", config.listen_addr, config.listen_port);
     tracing::info!("starting server on {}", addr);
     let http_server_handle = tokio::spawn(
         axum::Server::bind(&addr.parse()?)
