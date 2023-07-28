@@ -23,6 +23,7 @@ spec:
             properties:
               kube_username:
                 description: Kubernetes username
+                nullable: true
                 type: string
               quota:
                 description: ResourceQuota in namespace
@@ -294,8 +295,6 @@ spec:
                 required:
                 - role_ref
                 type: object
-            required:
-            - kube_username
             type: object
           status:
             nullable: true
