@@ -103,7 +103,7 @@ async fn get_cert_hash(cert: impl AsRef<Path>, key: impl AsRef<Path>) -> Result<
     let cert_content = tokio::fs::read(cert).await?;
     let key_content = tokio::fs::read(key).await?;
 
-    Ok(sha256::digest(&[cert_content, key_content].concat()))
+    Ok(sha256::digest([cert_content, key_content].concat()))
 }
 
 // very simple cert reloader based on file content hash
@@ -116,7 +116,7 @@ async fn cert_reloader(
     // get initial hash
     let mut hash = get_cert_hash(&cert, &key).await?;
     let mut interval = tokio::time::interval(Duration::from_secs(60));
-    while let Some(_) = stopper.stop_future(interval.tick()).await {
+    while stopper.stop_future(interval.tick()).await.is_some() {
         // calc new hash
         let new_hash = get_cert_hash(&cert, &key).await?;
         // if hash is different, reload cert
@@ -295,13 +295,10 @@ fn mutate(
         }
         Operation::Delete => {
             // if user is normal user, deny
-            match username.kind {
-                UsernameKind::Normal => {
-                    let e = "normal user is not allowed to delete resource";
-                    tracing::error!(e);
-                    return Ok(resp.deny(e));
-                }
-                _ => {}
+            if let UsernameKind::Normal = username.kind {
+                let e = "normal user is not allowed to delete resource";
+                tracing::error!(e);
+                return Ok(resp.deny(e));
             }
 
             // early return
@@ -309,13 +306,10 @@ fn mutate(
         }
         Operation::Update => {
             // if user is normal user, deny
-            match username.kind {
-                UsernameKind::Normal => {
-                    let e = "normal user is not allowed to update resource";
-                    tracing::error!(e);
-                    return Ok(resp.deny(e));
-                }
-                _ => {}
+            if let UsernameKind::Normal = username.kind {
+                let e = "normal user is not allowed to update resource";
+                tracing::error!(e);
+                return Ok(resp.deny(e));
             }
 
             // continue processing
@@ -408,13 +402,10 @@ fn mutate(
         }));
     } else {
         // if quota key is not empty and user is normal user, deny
-        match username.kind {
-            UsernameKind::Normal => {
-                let e = "quota field is not empty. you are a normal user, so leave it empty";
-                tracing::error!(e);
-                return Ok(resp.deny(e));
-            }
-            _ => {}
+        if let UsernameKind::Normal = username.kind {
+            let e = "quota field is not empty. you are a normal user, so leave it empty";
+            tracing::error!(e);
+            return Ok(resp.deny(e));
         }
     }
 
@@ -427,9 +418,9 @@ fn mutate(
 
         let subject_name = match username.kind {
             // use username as subject name
-            UsernameKind::Normal => username.original_username.clone(),
+            UsernameKind::Normal => username.original_username,
             // use object's kube_username field as subject name
-            UsernameKind::Admin => ub.spec.kube_username.clone(),
+            UsernameKind::Admin => ub.spec.kube_username,
         };
 
         let rb = bacchus_gpu_controller::crd::RoleBinding {
@@ -452,13 +443,10 @@ fn mutate(
         }));
     } else {
         // if rolebinding key is not empty and user is normal user, deny
-        match username.kind {
-            UsernameKind::Normal => {
-                let e = "rolebinding field is not empty. you are a normal user, so leave it empty";
-                tracing::error!(e);
-                return Ok(resp.deny(e));
-            }
-            _ => {}
+        if let UsernameKind::Normal = username.kind {
+            let e = "rolebinding field is not empty. you are a normal user, so leave it empty";
+            tracing::error!(e);
+            return Ok(resp.deny(e));
         }
     }
 

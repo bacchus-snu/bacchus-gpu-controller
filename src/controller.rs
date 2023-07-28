@@ -17,7 +17,7 @@ use tracing::info;
 
 use bacchus_gpu_controller::crd::UserBootstrap;
 
-const PATCH_MANAGER: &'static str = "bacchus-gpu-controller.bacchus.io";
+const PATCH_MANAGER: &str = "bacchus-gpu-controller.bacchus.io";
 
 #[derive(Error, Debug)]
 enum ControllerError {
@@ -109,7 +109,6 @@ async fn reconcile(obj: Arc<UserBootstrap>, ctx: Arc<Data>) -> Result<Action, Co
             },
             role_ref: rolebinding.role_ref,
             subjects: rolebinding.subjects,
-            ..Default::default()
         };
 
         let rolebinding_api = Api::<RoleBinding>::namespaced(client.clone(), &name);
