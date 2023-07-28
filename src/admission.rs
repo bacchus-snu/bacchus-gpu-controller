@@ -173,20 +173,14 @@ async fn main() -> anyhow::Result<()> {
         signal_future.await;
     });
 
-    tracing::info!(
-        "starting tls server on {}:{}",
-        config.listen_addr,
-        config.listen_port
-    );
+    let addr = format!("{}:{}", config.listen_addr, config.listen_port);
+    tracing::info!("starting tls server on {}", addr);
 
     // start tls-enabled http server
-    axum_server::bind_rustls(
-        format!("{}:{}", config.listen_addr, config.listen_port).parse()?,
-        tls_config,
-    )
-    .handle(handle.clone())
-    .serve(app.into_make_service())
-    .await?;
+    axum_server::bind_rustls(addr.parse()?, tls_config)
+        .handle(handle.clone())
+        .serve(app.into_make_service())
+        .await?;
 
     tracing::info!("received signal. shutting down...");
 
