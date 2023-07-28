@@ -13,7 +13,7 @@ cargo build --release
 
 ## Generate CRD
 ```sh
-cargo run --bin crdgen
+./generate-crd.sh
 
 # To apply directly to cluster, pipe to `kubectl`
 # cargo run --bin crdgen | kubectl apply -f -
