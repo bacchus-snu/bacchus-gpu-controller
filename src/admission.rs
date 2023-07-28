@@ -39,12 +39,12 @@ struct Config {
     oidc_username_prefix: String,
 
     default_role_name: String,
-    #[serde(deserialize_with = "comma_seperated_deserialize")]
+    #[serde(deserialize_with = "comma_separated_deserialize")]
     // group name list that will be used to determine if the user is authorized or not
     authorized_group_names: Vec<String>,
 }
 
-fn comma_seperated_deserialize<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+fn comma_separated_deserialize<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
