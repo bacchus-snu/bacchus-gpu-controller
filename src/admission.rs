@@ -41,7 +41,7 @@ struct Config {
     default_role_name: String,
     #[serde(deserialize_with = "comma_seperated_deserialize")]
     // group name list that will be used to determine if the user is authorized or not
-    groups: Vec<String>,
+    authorized_group_names: Vec<String>,
 }
 
 fn comma_seperated_deserialize<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
@@ -272,7 +272,7 @@ fn mutate(
         .clone()
         .unwrap_or_default()
         .iter()
-        .map(|group| state.config.groups.contains(group))
+        .map(|group| state.config.authorized_group_names.contains(group))
         .any(|is_in_group| is_in_group);
 
     match req.operation {
