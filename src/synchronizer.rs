@@ -1,9 +1,15 @@
-use std::time::Duration;
+use std::{collections::BTreeMap, time::Duration};
 
+use bacchus_gpu_controller::crd::UserBootstrap;
 use google_drive3::{
     hyper, hyper_rustls,
     oauth2::{self, ServiceAccountKey},
     DriveHub,
+};
+use k8s_openapi::{api::core::v1::ResourceQuotaSpec, apimachinery::pkg::api::resource::Quantity};
+use kube::{
+    api::{ListParams, Patch, PatchParams},
+    Api,
 };
 use serde::Deserialize;
 use stopper::Stopper;
@@ -24,6 +30,8 @@ const fn default_sync_interval_secs() -> u64 {
 
 #[derive(Error, Debug)]
 enum Error {
+    #[error("kube error: {0}")]
+    KubeError(#[from] kube::Error),
     #[error("google auth error: {0}")]
     GoogleAuthError(String),
     #[error("file is not utf8: {0}")]
@@ -42,6 +50,9 @@ enum Error {
 
 #[derive(Clone, Debug, Deserialize)]
 struct Row {
+    // timestamp field (unused)
+    // timestamp: String,
+
     // real name
     name: String,
     // username in id.snucse.org
@@ -113,6 +124,7 @@ fn parse_csv(content: impl AsRef<str>) -> Result<Vec<Row>, Error> {
 }
 
 async fn synchronize_loop(
+    client: kube::Client,
     key: ServiceAccountKey,
     config: Config,
     stopper: Stopper,
@@ -127,11 +139,14 @@ async fn synchronize_loop(
         .https_only()
         .enable_http1()
         .build();
-    let client = hyper::Client::builder().build(https);
-    let hub = DriveHub::new(client, auth);
+    let hub = DriveHub::new(hyper::Client::builder().build(https), auth);
+
+    // UserBootstrap api
+    let ub_api = Api::<UserBootstrap>::all(client.clone());
 
     let mut interval = tokio::time::interval(Duration::from_secs(config.sync_interval_secs));
     while stopper.stop_future(interval.tick()).await.is_some() {
+        tracing::info!("starting synchronization");
         // read file as csv
         let mut resp = hub
             .files()
@@ -143,7 +158,70 @@ async fn synchronize_loop(
             return Err(Error::RequestFailed);
         }
         let content = String::from_utf8(hyper::body::to_bytes(resp.body_mut()).await?.to_vec())?;
-        let rows = parse_csv(content)?;
+        // filter rows by gpu server name
+        let rows = parse_csv(content)?
+            .into_iter()
+            .filter(|row| row.gpu_server == config.gpu_server_name)
+            .collect::<Vec<_>>();
+
+        // list all UserBootstrap resources
+        let ubs = ub_api.list(&ListParams::default()).await?.items;
+        for ub in ubs {
+            let resource_name = match ub.metadata.name {
+                Some(ref name) => name.to_string(),
+                None => continue,
+            };
+
+            // find row which has same username
+            let row = match rows.iter().find(|row| row.id_username == resource_name) {
+                Some(row) => row,
+                None => continue,
+            };
+
+            // let's update the quota!
+
+            let mut new_ub = ub.clone();
+
+            let quota = ResourceQuotaSpec {
+                hard: Some(BTreeMap::from_iter(vec![
+                    (
+                        "requests.cpu".to_string(),
+                        Quantity(row.cpu_request.to_string().into()),
+                    ),
+                    (
+                        "requests.memory".to_string(),
+                        Quantity(format!("{}Mi", row.memory_request).into()),
+                    ),
+                    (
+                        "requests.nvidia.com/gpu".to_string(),
+                        Quantity(row.gpu_request.to_string().into()),
+                    ),
+                    (
+                        "requests.storage".to_string(),
+                        Quantity(format!("{}Gi", row.storage_request).into()),
+                    ),
+                ])),
+                ..Default::default()
+            };
+
+            new_ub.spec.quota = Some(quota);
+
+            tracing::info!(
+                row.name,
+                row.id_username,
+                row.cpu_request,
+                row.memory_request,
+                row.gpu_request,
+                row.storage_request,
+                "updating quota"
+            );
+
+            // apply patches
+            let patch_params = PatchParams::default();
+            ub_api
+                .patch(&resource_name, &patch_params, &Patch::Apply(new_ub))
+                .await?;
+        }
     }
 
     Ok(())
@@ -159,8 +237,11 @@ async fn main() -> anyhow::Result<()> {
     // read key file from file
     let key = oauth2::read_service_account_key(&config.google_service_account_json_path).await?;
 
+    // initialize kube client
+    let client = kube::Client::try_default().await?;
+
     // start synchronization loop
-    synchronize_loop(key, config, Stopper::new()).await?;
+    synchronize_loop(client, key, config, Stopper::new()).await?;
 
     Ok(())
 }
