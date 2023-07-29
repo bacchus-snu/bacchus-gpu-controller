@@ -8,7 +8,7 @@ use google_drive3::{
     oauth2::{self, ServiceAccountKey},
     DriveHub,
 };
-use json_patch::{AddOperation, PatchOperation};
+use json_patch::{AddOperation, PatchOperation, ReplaceOperation};
 use k8s_openapi::{api::core::v1::ResourceQuotaSpec, apimachinery::pkg::api::resource::Quantity};
 use kube::{
     api::{ListParams, Patch, PatchParams},
@@ -224,7 +224,7 @@ async fn synchronize_loop(
                 ..Default::default()
             };
 
-            patches.push(PatchOperation::Add(AddOperation {
+            patches.push(PatchOperation::Replace(ReplaceOperation {
                 path: "/spec/quota".to_string(),
                 value: serde_json::json!(quota),
             }));
