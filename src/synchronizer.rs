@@ -256,7 +256,10 @@ async fn synchronize_loop(
     Ok(())
 }
 
-async fn shutdown_signal(tx: tokio::sync::broadcast::Sender<()>, stopper: Stopper) {
+async fn shutdown_signal(
+    tx: tokio::sync::broadcast::Sender<()>,
+    stopper: Stopper,
+) -> anyhow::Result<()> {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -282,7 +285,9 @@ async fn shutdown_signal(tx: tokio::sync::broadcast::Sender<()>, stopper: Stoppe
     tracing::info!("signal received, starting graceful shutdown");
 
     stopper.stop();
-    tx.send(()).expect("failed to broadcast shutdown signal");
+    tx.send(())?;
+
+    Ok(())
 }
 
 #[tokio::main]
@@ -315,18 +320,25 @@ async fn main() -> anyhow::Result<()> {
     // start synchronization loop
     let synchronizer_handle = {
         let stopper = stopper.clone();
-        tokio::spawn(async move {
-            synchronize_loop(client, key, config, stopper)
-                .await
-                .expect("synchronization loop failed")
-        })
+        tokio::spawn(synchronize_loop(client, key, config, stopper))
     };
 
     // wait for signal
-    shutdown_signal(signal_tx, stopper).await;
+    let shutdown_signal_handle = {
+        let stopper = stopper.clone();
+        tokio::spawn(shutdown_signal(signal_tx, stopper))
+    };
 
     // join all handles
-    let _ = tokio::try_join!(synchronizer_handle, http_server_handle)?;
+    let (synchronizer_res, http_server_res, shutdown_signal_res) = tokio::try_join!(
+        synchronizer_handle,
+        http_server_handle,
+        shutdown_signal_handle
+    )?;
+
+    synchronizer_res?;
+    http_server_res?;
+    shutdown_signal_res?;
 
     tracing::info!("synchronizer gracefully shutted down");
 
