@@ -8,6 +8,7 @@ use google_drive3::{
     oauth2::{self, ServiceAccountKey},
     DriveHub,
 };
+use json_patch::{AddOperation, PatchOperation};
 use k8s_openapi::{api::core::v1::ResourceQuotaSpec, apimachinery::pkg::api::resource::Quantity};
 use kube::{
     api::{ListParams, Patch, PatchParams},
@@ -192,7 +193,14 @@ async fn synchronize_loop(
 
             // let's update the quota!
 
-            let mut new_ub = ub.clone();
+            let mut patches = Vec::new();
+
+            if ub.spec.quota.is_none() {
+                patches.push(PatchOperation::Add(AddOperation {
+                    path: "/spec/quota".to_string(),
+                    value: serde_json::json!({}),
+                }));
+            }
 
             let quota = ResourceQuotaSpec {
                 hard: Some(BTreeMap::from_iter(vec![
@@ -216,7 +224,10 @@ async fn synchronize_loop(
                 ..Default::default()
             };
 
-            new_ub.spec.quota = Some(quota);
+            patches.push(PatchOperation::Add(AddOperation {
+                path: "/spec/quota".to_string(),
+                value: serde_json::json!(quota),
+            }));
 
             tracing::info!(
                 row.name,
@@ -231,7 +242,11 @@ async fn synchronize_loop(
             // apply patches
             let patch_params = PatchParams::apply(PATCH_MANAGER).force();
             ub_api
-                .patch(&resource_name, &patch_params, &Patch::Apply(new_ub))
+                .patch(
+                    &resource_name,
+                    &patch_params,
+                    &Patch::Json::<()>(json_patch::Patch(patches)),
+                )
                 .await?;
 
             tracing::info!("quota updated")
