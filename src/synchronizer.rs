@@ -1,6 +1,8 @@
 use std::{collections::BTreeMap, time::Duration};
 
+use axum::Router;
 use bacchus_gpu_controller::crd::UserBootstrap;
+use futures::FutureExt;
 use google_drive3::{
     hyper, hyper_rustls,
     oauth2::{self, ServiceAccountKey},
@@ -17,6 +19,10 @@ use thiserror::Error;
 
 #[derive(Clone, Debug, Deserialize)]
 struct Config {
+    // for health check
+    listen_addr: String,
+    listen_port: u16,
+
     google_service_account_json_path: String,
     google_file_id: String,
     #[serde(default = "default_sync_interval_secs")]
@@ -227,7 +233,7 @@ async fn synchronize_loop(
     Ok(())
 }
 
-async fn shutdown_signal(stopper: Stopper) {
+async fn shutdown_signal(tx: tokio::sync::broadcast::Sender<()>, stopper: Stopper) {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -253,6 +259,7 @@ async fn shutdown_signal(stopper: Stopper) {
     tracing::info!("signal received, starting graceful shutdown");
 
     stopper.stop();
+    tx.send(()).expect("failed to broadcast shutdown signal");
 }
 
 #[tokio::main]
@@ -270,14 +277,28 @@ async fn main() -> anyhow::Result<()> {
 
     let stopper = Stopper::new();
 
-    // wait for signal
-    let signal_future = shutdown_signal(stopper.clone());
-    tokio::spawn(async move {
-        signal_future.await;
-    });
+    let (signal_tx, mut signal_rx) = tokio::sync::broadcast::channel::<()>(1);
+
+    // create health check endpoint
+    let app = Router::new().route("/health", axum::routing::get(|| async { "pong" }));
+    let addr = format!("{}:{}", config.listen_addr, config.listen_port);
+    tracing::info!("starting http server on {}", addr);
+    let http_server_handle = tokio::spawn(
+        axum::Server::bind(&addr.parse()?)
+            .serve(app.into_make_service())
+            .with_graceful_shutdown(async move { signal_rx.recv().await }.map(|_| ())),
+    );
 
     // start synchronization loop
-    synchronize_loop(client, key, config, stopper).await?;
+    let synchronizer_handle = tokio::spawn(synchronize_loop(client, key, config, stopper.clone()));
+
+    // wait for signal
+    shutdown_signal(signal_tx, stopper).await;
+
+    // join all handles
+    let _ = tokio::try_join!(synchronizer_handle, http_server_handle)?;
+
+    tracing::info!("synchronizer gracefully shutted down");
 
     Ok(())
 }
