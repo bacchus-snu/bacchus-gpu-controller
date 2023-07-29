@@ -298,7 +298,14 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // start synchronization loop
-    let synchronizer_handle = tokio::spawn(synchronize_loop(client, key, config, stopper.clone()));
+    let synchronizer_handle = {
+        let stopper = stopper.clone();
+        tokio::spawn(async move {
+            synchronize_loop(client, key, config, stopper)
+                .await
+                .expect("synchronization loop failed")
+        })
+    };
 
     // wait for signal
     shutdown_signal(signal_tx, stopper).await;
