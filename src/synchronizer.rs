@@ -163,6 +163,7 @@ async fn synchronize_loop(
         if !resp.status().is_success() {
             return Err(Error::RequestFailed);
         }
+        tracing::info!("downloaded csv file");
         let content = String::from_utf8(hyper::body::to_bytes(resp.body_mut()).await?.to_vec())?;
         // filter rows by gpu server name
         let rows = parse_csv(content)?
@@ -170,6 +171,8 @@ async fn synchronize_loop(
             // NOTE: not exact match
             .filter(|row| row.gpu_server.contains(&config.gpu_server_name))
             .collect::<Vec<_>>();
+
+        tracing::info!("target rows: {}", rows.len());
 
         // list all UserBootstrap resources
         let ubs = ub_api.list(&ListParams::default()).await?.items;
@@ -228,6 +231,8 @@ async fn synchronize_loop(
             ub_api
                 .patch(&resource_name, &patch_params, &Patch::Apply(new_ub))
                 .await?;
+
+            tracing::info!("quota updated")
         }
     }
 
