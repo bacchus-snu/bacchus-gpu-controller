@@ -1,5 +1,5 @@
 {{- $name := include "bacchus-gpu.fullname" . }}
-{{- $component = "controller" }}
+{{- $component := "controller" }}
 {{- $ctx := get .Values $component }}
 apiVersion: apps/v1
 kind: Deployment
@@ -35,7 +35,7 @@ spec:
           image: "{{ $ctx.image.repository }}:{{ $ctx.image.tag | default $.Chart.AppVersion }}"
           imagePullPolicy: {{ $ctx.image.pullPolicy }}
           command:
-            - {{- printf "/app/%s" $component | quote }}
+            - {{ printf "/app/%s" $component | quote }}
           env:
             - name: RUST_LOG
               value: {{ $ctx.configs.rust_log | quote }}
@@ -71,7 +71,7 @@ spec:
       {{- end }}
 ---
 
-{{- $component = "admission" }}
+{{- $component := "admission" }}
 {{- $ctx := get .Values $component }}
 apiVersion: apps/v1
 kind: Deployment
@@ -107,7 +107,7 @@ spec:
           image: "{{ $ctx.image.repository }}:{{ $ctx.image.tag | default $.Chart.AppVersion }}"
           imagePullPolicy: {{ $ctx.image.pullPolicy }}
           command:
-            - {{- printf "/app/%s" $component | quote }}
+            - {{ printf "/app/%s" $component | quote }}
           env:
             - name: RUST_LOG
               value: {{ $ctx.configs.rust_log | quote }}
@@ -161,7 +161,7 @@ spec:
       {{- end }}
 ---
 
-{{- $component = "synchronizer" }}
+{{- $component := "synchronizer" }}
 {{- $ctx := get .Values $component }}
 apiVersion: apps/v1
 kind: Deployment
@@ -197,7 +197,7 @@ spec:
           image: "{{ $ctx.image.repository }}:{{ $ctx.image.tag | default $.Chart.AppVersion }}"
           imagePullPolicy: {{ $ctx.image.pullPolicy }}
           command:
-            - {{- printf "/app/%s" $component | quote }}
+            - {{ printf "/app/%s" $component | quote }}
           env:
             - name: RUST_LOG
               value: {{ $ctx.configs.rust_log | quote }}
