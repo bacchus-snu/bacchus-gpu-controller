@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, path::Path, sync::Arc, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 
 use axum::{
     extract,
@@ -10,13 +10,7 @@ use axum::{
 use axum_server::tls_rustls::RustlsConfig;
 use bacchus_gpu_controller::crd::UserBootstrap;
 use json_patch::{AddOperation, PatchOperation};
-use k8s_openapi::{
-    api::{
-        core::v1::ResourceQuotaSpec,
-        rbac::v1::{RoleRef, Subject},
-    },
-    apimachinery::pkg::api::resource::Quantity,
-};
+use k8s_openapi::api::rbac::v1::{RoleRef, Subject};
 use kube::core::{
     admission::{AdmissionRequest, AdmissionResponse, AdmissionReview, Operation},
     DynamicObject,
@@ -379,28 +373,7 @@ fn mutate(
         }
     }
 
-    // if quota key is empty, fill it
-    if ub.spec.quota.is_none() {
-        patches.push(PatchOperation::Add(AddOperation {
-            path: "/spec/quota".to_string(),
-            value: serde_json::json!({}),
-        }));
-
-        // add default quota
-        // TODO: use default quota from config
-        let default_quota = ResourceQuotaSpec {
-            hard: Some(BTreeMap::from_iter(vec![
-                ("requests.cpu".to_string(), Quantity("1".into())),
-                ("requests.memory".to_string(), Quantity("500Mi".into())),
-            ])),
-            ..Default::default()
-        };
-
-        patches.push(PatchOperation::Add(AddOperation {
-            path: "/spec/quota".to_string(),
-            value: serde_json::to_value(default_quota).unwrap(),
-        }));
-    } else {
+    if ub.spec.quota.is_some() {
         // if quota key is not empty and user is normal user, deny
         if let UsernameKind::Normal = username.kind {
             let e = "quota field is not empty. you are a normal user, so leave it empty";
