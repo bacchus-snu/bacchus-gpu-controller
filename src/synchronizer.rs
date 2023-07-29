@@ -240,7 +240,7 @@ async fn synchronize_loop(
             );
 
             // apply patches
-            let patch_params = PatchParams::apply(PATCH_MANAGER).force();
+            let patch_params = PatchParams::apply(PATCH_MANAGER);
             ub_api
                 .patch(
                     &resource_name,
