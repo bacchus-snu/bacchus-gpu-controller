@@ -4,17 +4,12 @@ kind: ClusterRole
 metadata:
   name: {{ $name }}-userbootstraps-default-role
 rules:
-  - apiGroups:
-      - bacchus.io
-    resources:
-      - userbootstraps
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - update
-      - patch
+  - apiGroups: ["bacchus.io"]
+    resources: ["userbootstraps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
 ---
 
 apiVersion: rbac.authorization.k8s.io/v1
