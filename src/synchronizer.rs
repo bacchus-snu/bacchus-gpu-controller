@@ -167,7 +167,8 @@ async fn synchronize_loop(
         // filter rows by gpu server name
         let rows = parse_csv(content)?
             .into_iter()
-            .filter(|row| row.gpu_server == config.gpu_server_name)
+            // NOTE: not exact match
+            .filter(|row| row.gpu_server.contains(&config.gpu_server_name))
             .collect::<Vec<_>>();
 
         // list all UserBootstrap resources
