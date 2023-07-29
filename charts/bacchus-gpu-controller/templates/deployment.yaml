@@ -214,7 +214,7 @@ spec:
             - name: CONF_GPU_SERVER_NAME
               value: {{ $ctx.configs.gpu_server_name | quote }}
           volumeMounts:
-            - name: google_service_account_json
+            - name: google-service-account-json
               mountPath: /google_service_account_json
               readOnly: true
           ports:
@@ -232,7 +232,7 @@ spec:
           resources:
             {{- toYaml $ctx.resources | nindent 12 }}
       volumes:
-        - name: google_service_account_json
+        - name: google-service-account-json
           secret:
             secretName: {{ $ctx.configs.google_service_account_json_secret_name }}
       {{- with $ctx.nodeSelector }}
