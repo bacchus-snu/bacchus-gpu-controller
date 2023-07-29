@@ -23,4 +23,6 @@ RUN cargo build --release
 # ---
 FROM docker.io/debian:stable-slim AS runtime
 
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /app/target/release/admission /app/target/release/controller /app/target/release/synchronizer /app/
