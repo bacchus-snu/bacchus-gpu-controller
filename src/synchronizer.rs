@@ -227,6 +227,34 @@ async fn synchronize_loop(
     Ok(())
 }
 
+async fn shutdown_signal(stopper: Stopper) {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    tracing::info!("signal received, starting graceful shutdown");
+
+    stopper.stop();
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -240,8 +268,16 @@ async fn main() -> anyhow::Result<()> {
     // initialize kube client
     let client = kube::Client::try_default().await?;
 
+    let stopper = Stopper::new();
+
+    // wait for signal
+    let signal_future = shutdown_signal(stopper.clone());
+    tokio::spawn(async move {
+        signal_future.await;
+    });
+
     // start synchronization loop
-    synchronize_loop(client, key, config, Stopper::new()).await?;
+    synchronize_loop(client, key, config, stopper).await?;
 
     Ok(())
 }
