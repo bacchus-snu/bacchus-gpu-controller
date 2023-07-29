@@ -1,9 +1,10 @@
 {{- $name := include "bacchus-gpu.fullname" . }}
-{{- $ctx := get .Values "controller" }}
+{{- $component = "controller" }}
+{{- $ctx := get .Values $component }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ $name }}-controller
+  name: {{ $name }}-{{ $component }}
   labels:
     {{- include "bacchus-gpu.labels" . | nindent 4 }}
 spec:
@@ -24,17 +25,17 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ $name }}-controller
+      serviceAccountName: {{ $name }}-{{ $component }}
       securityContext:
         {{- toYaml $ctx.podSecurityContext | nindent 8 }}
       containers:
-        - name: controller
+        - name: {{ $component }}
           securityContext:
             {{- toYaml $ctx.securityContext | nindent 12 }}
           image: "{{ $ctx.image.repository }}:{{ $ctx.image.tag | default $.Chart.AppVersion }}"
           imagePullPolicy: {{ $ctx.image.pullPolicy }}
           command:
-            - "/app/controller"
+            - {{- printf "/app/%s" $component | quote }}
           env:
             - name: RUST_LOG
               value: {{ $ctx.configs.rust_log | quote }}
@@ -70,11 +71,12 @@ spec:
       {{- end }}
 ---
 
-{{- $ctx := get .Values "admission" }}
+{{- $component = "admission" }}
+{{- $ctx := get .Values $component }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ $name }}-admission
+  name: {{ $name }}-{{ $component }}
   labels:
     {{- include "bacchus-gpu.labels" . | nindent 4 }}
 spec:
@@ -95,17 +97,17 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ $name }}-admission
+      serviceAccountName: {{ $name }}-{{ $component }}
       securityContext:
         {{- toYaml $ctx.podSecurityContext | nindent 8 }}
       containers:
-        - name: admission
+        - name: {{ $component }}
           securityContext:
             {{- toYaml $ctx.securityContext | nindent 12 }}
           image: "{{ $ctx.image.repository }}:{{ $ctx.image.tag | default $.Chart.AppVersion }}"
           imagePullPolicy: {{ $ctx.image.pullPolicy }}
           command:
-            - "/app/admission"
+            - {{- printf "/app/%s" $component | quote }}
           env:
             - name: RUST_LOG
               value: {{ $ctx.configs.rust_log | quote }}
@@ -145,6 +147,94 @@ spec:
         - name: cert
           secret:
             secretName: {{ $name }}-cert
+      {{- with $ctx.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $ctx.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $ctx.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+
+{{- $component = "synchronizer" }}
+{{- $ctx := get .Values $component }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-{{ $component }}
+  labels:
+    {{- include "bacchus-gpu.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $ctx.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "bacchus-gpu.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with $ctx.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "bacchus-gpu.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with $ctx.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ $name }}-{{ $component }}
+      securityContext:
+        {{- toYaml $ctx.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ $component }}
+          securityContext:
+            {{- toYaml $ctx.securityContext | nindent 12 }}
+          image: "{{ $ctx.image.repository }}:{{ $ctx.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $ctx.image.pullPolicy }}
+          command:
+            - {{- printf "/app/%s" $component | quote }}
+          env:
+            - name: RUST_LOG
+              value: {{ $ctx.configs.rust_log | quote }}
+            - name: CONF_LISTEN_ADDR
+              value: "0.0.0.0"
+            - name: CONF_LISTEN_PORT
+              value: {{ $ctx.service.port | quote }}
+            - name: CONF_GOOGLE_SERVICE_ACCOUNT_JSON_PATH
+              value: "/google_service_account_json/key.json"
+            - name: CONF_GOOGLE_FILE_ID
+              value: {{ $ctx.configs.google_file_id | quote }}
+            - name: CONF_SYNC_INTERVAL_SECS
+              value: {{ $ctx.configs.sync_interval_secs | quote }}
+            - name: CONF_GPU_SERVER_NAME
+              value: {{ $ctx.configs.gpu_server_name | quote }}
+          volumeMounts:
+            - name: google_service_account_json
+              mountPath: /google_service_account_json
+              readOnly: true
+          ports:
+            - name: http
+              containerPort: {{ $ctx.service.port }}
+              protocol: TCP
+          {{- with $ctx.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $ctx.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml $ctx.resources | nindent 12 }}
+      volumes:
+        - name: google_service_account_json
+          secret:
+            secretName: {{ $ctx.configs.google_service_account_json_secret_name }}
       {{- with $ctx.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

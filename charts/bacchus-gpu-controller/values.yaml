@@ -87,3 +87,49 @@ admission:
     authorized_group_names:
       - "gpu"
       - "admin"
+
+synchronizer:
+  replicaCount: 1
+  image:
+    repository: "public.ecr.aws/p7y3x4r8/bacchus-gpu-controller"
+    pullPolicy: Always
+    tag: "latest"
+
+  imagePullSecrets: []
+  nameOverride: ""
+  fullnameOverride: ""
+
+  serviceAccount:
+    annotations: {}
+
+  podAnnotations: {}
+
+  podSecurityContext: {}
+
+  securityContext: {}
+
+  service:
+    type: ClusterIP
+    port: 12323
+
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+
+  configs:
+    rust_log: "info"
+    google_file_id: ""
+    sync_interval_secs: 60
+    gpu_server_name: ""
+    # should contain "key.json" with key and json content with value
+    google_service_account_json_secret_name: ""
