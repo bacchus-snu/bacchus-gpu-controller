@@ -17,6 +17,8 @@ use serde::Deserialize;
 use stopper::Stopper;
 use thiserror::Error;
 
+const PATCH_MANAGER: &str = "bacchus-gpu-controller.bacchus.io";
+
 #[derive(Clone, Debug, Deserialize)]
 struct Config {
     // for health check
@@ -227,7 +229,7 @@ async fn synchronize_loop(
             );
 
             // apply patches
-            let patch_params = PatchParams::default();
+            let patch_params = PatchParams::apply(PATCH_MANAGER).force();
             ub_api
                 .patch(&resource_name, &patch_params, &Patch::Apply(new_ub))
                 .await?;
