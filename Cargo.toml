@@ -23,6 +23,7 @@ path = "src/synchronizer.rs"
 anyhow = "1.0.72"
 axum = "0.6.19"
 axum-server = { version = "0.5.1", features = ["tls-rustls"] }
+csv = "1.2.2"
 envy = "0.4.2"
 futures = "0.3.28"
 google-drive3 = "5.0.2"
