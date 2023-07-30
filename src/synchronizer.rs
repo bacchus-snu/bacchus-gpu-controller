@@ -17,6 +17,7 @@ use kube::{
 use serde::Deserialize;
 use stopper::Stopper;
 use thiserror::Error;
+use tokio::task::JoinHandle;
 
 const PATCH_MANAGER: &str = "bacchus-gpu-controller.bacchus.io";
 
@@ -55,6 +56,8 @@ enum Error {
     CsvHeaderError(String),
     #[error("csv parsing error: {0}")]
     CsvParseError(#[from] csv::Error),
+    #[error("signal handling error")]
+    SignalHandlerError,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -259,7 +262,7 @@ async fn synchronize_loop(
 async fn shutdown_signal(
     tx: tokio::sync::broadcast::Sender<()>,
     stopper: Stopper,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -285,9 +288,17 @@ async fn shutdown_signal(
     tracing::info!("signal received, starting graceful shutdown");
 
     stopper.stop();
-    tx.send(())?;
+    tx.send(()).map_err(|_| Error::SignalHandlerError)?;
 
     Ok(())
+}
+
+async fn flatten_error<T>(handle: JoinHandle<Result<T, Error>>) -> Result<T, Error> {
+    match handle.await {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(err)) => Err(err),
+        Err(_) => panic!("join error"),
+    }
 }
 
 #[tokio::main]
@@ -311,11 +322,16 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new().route("/health", axum::routing::get(|| async { "pong" }));
     let addr = format!("{}:{}", config.listen_addr, config.listen_port);
     tracing::info!("starting http server on {}", addr);
-    let http_server_handle = tokio::spawn(
-        axum::Server::bind(&addr.parse()?)
+    let http_server_handle = {
+        let server = axum::Server::bind(&addr.parse()?)
             .serve(app.into_make_service())
-            .with_graceful_shutdown(async move { signal_rx.recv().await }.map(|_| ())),
-    );
+            .with_graceful_shutdown(async move { signal_rx.recv().await }.map(|_| ()));
+        let server = async {
+            server.await?;
+            Ok::<_, Error>(())
+        };
+        tokio::spawn(server)
+    };
 
     // start synchronization loop
     let synchronizer_handle = {
@@ -330,15 +346,11 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // join all handles
-    let (synchronizer_res, http_server_res, shutdown_signal_res) = tokio::try_join!(
-        synchronizer_handle,
-        http_server_handle,
-        shutdown_signal_handle
+    let _ = tokio::try_join!(
+        flatten_error(synchronizer_handle),
+        flatten_error(http_server_handle),
+        flatten_error(shutdown_signal_handle)
     )?;
-
-    synchronizer_res?;
-    http_server_res?;
-    shutdown_signal_res?;
 
     tracing::info!("synchronizer gracefully shutted down");
 
