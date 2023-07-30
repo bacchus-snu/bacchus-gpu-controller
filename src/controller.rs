@@ -14,6 +14,7 @@ use kube::{
 };
 use serde::Deserialize;
 use thiserror::Error;
+use tokio::task::JoinHandle;
 use tracing::info;
 
 use bacchus_gpu_controller::crd::UserBootstrap;
@@ -32,6 +33,14 @@ enum ControllerError {
     MissingObjectKey(&'static str),
     #[error("patch failed: {0}")]
     PatchFailed(#[source] kube::Error),
+}
+
+#[derive(Error, Debug)]
+enum Error {
+    #[error("http server error: {0}")]
+    HttpServerError(String),
+    #[error("signal handling error")]
+    SignalHandlerError,
 }
 
 struct Data {
@@ -152,7 +161,7 @@ fn error_policy(obj: Arc<UserBootstrap>, error: &ControllerError, _ctx: Arc<Data
     Action::requeue(Duration::from_secs(3))
 }
 
-async fn shutdown_signal(tx: tokio::sync::broadcast::Sender<()>) {
+async fn shutdown_signal(tx: tokio::sync::broadcast::Sender<()>) -> Result<(), Error> {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -177,7 +186,17 @@ async fn shutdown_signal(tx: tokio::sync::broadcast::Sender<()>) {
 
     tracing::info!("signal received, starting graceful shutdown");
 
-    tx.send(()).expect("failed to broadcast shutdown signal");
+    tx.send(()).map_err(|_| Error::SignalHandlerError)?;
+
+    Ok(())
+}
+
+async fn flatten_error<T>(handle: JoinHandle<Result<T, Error>>) -> Result<T, Error> {
+    match handle.await {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(err)) => Err(err),
+        Err(_) => panic!("join error"),
+    }
 }
 
 #[tokio::main]
@@ -198,8 +217,8 @@ async fn main() -> anyhow::Result<()> {
     let rolebinding_api = Api::<RoleBinding>::all(client.clone());
 
     let data = Arc::new(Data { client });
-    let controller_handle = tokio::spawn(
-        Controller::new(ub_api, watcher::Config::default())
+    let controller_handle = {
+        let controller = Controller::new(ub_api, watcher::Config::default())
             .owns(ns_api, watcher::Config::default())
             .owns(quota_api, watcher::Config::default())
             .owns(role_api, watcher::Config::default())
@@ -211,8 +230,13 @@ async fn main() -> anyhow::Result<()> {
                     Ok(o) => tracing::info!("reconciled {:?}", o),
                     Err(e) => tracing::error!("reconcile failed: {}", e),
                 }
-            }),
-    );
+            });
+        let controller = async {
+            controller.await;
+            Ok::<_, Error>(())
+        };
+        tokio::spawn(controller)
+    };
 
     let mut signal_rx = signal_tx.subscribe();
     // create health check endpoint
@@ -220,19 +244,29 @@ async fn main() -> anyhow::Result<()> {
 
     let addr = format!("{}:{}", config.listen_addr, config.listen_port);
     tracing::info!("starting server on {}", addr);
-    let http_server_handle = tokio::spawn(
-        axum::Server::bind(&addr.parse()?)
+    let http_server_handle = {
+        let server = axum::Server::bind(&addr.parse()?)
             .serve(app.into_make_service())
-            .with_graceful_shutdown(async move { signal_rx.recv().await }.map(|_| ())),
-    );
+            .with_graceful_shutdown(async move { signal_rx.recv().await }.map(|_| ()));
+        let server = async {
+            server.await.map_err(|e| {
+                tracing::error!("server error: {}", e);
+                Error::HttpServerError(e.to_string())
+            })?;
+            Ok::<_, Error>(())
+        };
+        tokio::spawn(server)
+    };
 
     // wait for signal
-    shutdown_signal(signal_tx).await;
-
-    info!("received signal. shutting down...");
+    let shutdown_handle = tokio::spawn(shutdown_signal(signal_tx));
 
     // join all handles
-    let _ = tokio::try_join!(controller_handle, http_server_handle)?;
+    let _ = tokio::try_join!(
+        flatten_error(controller_handle),
+        flatten_error(http_server_handle),
+        flatten_error(shutdown_handle),
+    )?;
 
     info!("controller gracefully shutted down");
 
