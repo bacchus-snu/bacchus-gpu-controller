@@ -129,7 +129,13 @@ fn parse_csv(content: impl AsRef<str>) -> Result<Vec<Row>, Error> {
     // deserialize rows
     let mut rows = Vec::new();
     for result in rdr.deserialize() {
-        let row: Row = result?;
+        let row: Row = match result {
+            Ok(row) => row,
+            Err(e) => {
+                tracing::warn!("row parsing error. skipping: {}", e);
+                continue;
+            }
+        };
         rows.push(row);
     }
     Ok(rows)
