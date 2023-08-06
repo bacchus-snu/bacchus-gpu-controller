@@ -118,24 +118,29 @@ async fn reconcile(obj: Arc<UserBootstrap>, ctx: Arc<Data>) -> Result<Action, Co
 
     // reconcile rolebinding
     if let Some(rolebinding) = obj.spec.rolebinding.clone() {
-        let rolebinding_with_meta = RoleBinding {
-            metadata: ObjectMeta {
-                name: Some(name.clone()),
-                ..Default::default()
-            },
-            role_ref: rolebinding.role_ref,
-            subjects: rolebinding.subjects,
-        };
+        // if the UserBootstrap is not synchronized with the sheet, then don't create rolebinding
+        if let Some(status) = obj.status.clone() {
+            if status.synchronized_with_sheet {
+                let rolebinding_with_meta = RoleBinding {
+                    metadata: ObjectMeta {
+                        name: Some(name.clone()),
+                        ..Default::default()
+                    },
+                    role_ref: rolebinding.role_ref,
+                    subjects: rolebinding.subjects,
+                };
 
-        let rolebinding_api = Api::<RoleBinding>::namespaced(client.clone(), &name);
+                let rolebinding_api = Api::<RoleBinding>::namespaced(client.clone(), &name);
 
-        rolebinding_api
-            .patch(&name, &patch_params, &Patch::Apply(rolebinding_with_meta))
-            .await
-            .map_err(|e| {
-                tracing::error!("failed to patch rolebinding: {}", e);
-                ControllerError::PatchFailed(e)
-            })?;
+                rolebinding_api
+                    .patch(&name, &patch_params, &Patch::Apply(rolebinding_with_meta))
+                    .await
+                    .map_err(|e| {
+                        tracing::error!("failed to patch rolebinding: {}", e);
+                        ControllerError::PatchFailed(e)
+                    })?;
+            }
+        }
     }
 
     Ok(Action::requeue(Duration::from_secs(30)))

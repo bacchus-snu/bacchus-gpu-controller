@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, time::Duration};
 
 use axum::Router;
-use bacchus_gpu_controller::crd::UserBootstrap;
+use bacchus_gpu_controller::crd::{UserBootstrap, UserBootstrapStatus};
 use futures::FutureExt;
 use google_drive3::{
     hyper, hyper_rustls,
@@ -237,6 +237,23 @@ async fn synchronize_loop(
                 path: "/spec/quota".to_string(),
                 value: serde_json::json!(quota),
             }));
+
+            // mark on status
+            let status = UserBootstrapStatus {
+                synchronized_with_sheet: true,
+                ..Default::default()
+            };
+            if ub.status.is_none() {
+                patches.push(PatchOperation::Add(AddOperation {
+                    path: "/status".to_string(),
+                    value: serde_json::json!(status),
+                }));
+            } else {
+                patches.push(PatchOperation::Replace(ReplaceOperation {
+                    path: "/status".to_string(),
+                    value: serde_json::json!(status),
+                }));
+            }
 
             tracing::info!(
                 row.name,

@@ -31,7 +31,7 @@ pub struct UserBootstrapSpec {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, JsonSchema)]
 pub struct UserBootstrapStatus {
-    // TODO
+    pub synchronized_with_sheet: bool,
 }
 
 /// RoleBinding without metadata
