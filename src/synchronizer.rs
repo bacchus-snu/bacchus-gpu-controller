@@ -222,6 +222,14 @@ async fn synchronize_loop(
                         Quantity(format!("{}Mi", row.memory_request).into()),
                     ),
                     (
+                        "limits.cpu".to_string(),
+                        Quantity(row.cpu_request.to_string().into()),
+                    ),
+                    (
+                        "limits.memory".to_string(),
+                        Quantity(format!("{}Mi", row.memory_request).into()),
+                    ),
+                    (
                         "requests.nvidia.com/gpu".to_string(),
                         Quantity(row.gpu_request.to_string().into()),
                     ),
