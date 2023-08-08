@@ -11,7 +11,7 @@ use google_drive3::{
 use json_patch::{AddOperation, PatchOperation, ReplaceOperation};
 use k8s_openapi::{api::core::v1::ResourceQuotaSpec, apimachinery::pkg::api::resource::Quantity};
 use kube::{
-    api::{ListParams, Patch, PatchParams},
+    api::{ListParams, Patch, PatchParams, PostParams},
     Api,
 };
 use serde::Deserialize;
@@ -251,17 +251,14 @@ async fn synchronize_loop(
                 synchronized_with_sheet: true,
                 ..Default::default()
             };
-            if ub.status.is_none() {
-                patches.push(PatchOperation::Add(AddOperation {
-                    path: "/status".to_string(),
-                    value: serde_json::json!(status),
-                }));
-            } else {
-                patches.push(PatchOperation::Replace(ReplaceOperation {
-                    path: "/status".to_string(),
-                    value: serde_json::json!(status),
-                }));
-            }
+            tracing::info!("updating status");
+            ub_api
+                .replace_status(
+                    &resource_name,
+                    &PostParams::default(),
+                    serde_json::to_vec(&status).unwrap(),
+                )
+                .await?;
 
             tracing::info!(
                 row.name,
