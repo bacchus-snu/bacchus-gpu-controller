@@ -79,6 +79,8 @@ struct Row {
     memory_request: i64,
     // storage request
     storage_request: i64,
+    // mig request
+    mig_request: i64,
 }
 
 // try to infer header name with heuristics
@@ -90,16 +92,16 @@ fn try_infer_header(header: impl AsRef<str>) -> Result<String, Error> {
     if header == "이름" {
         return Ok("name".to_string());
     }
-    if header.contains("id.snucse.org") && header.contains("이름") {
+    if header.contains("SNUCSE") && header.contains("이름") {
         return Ok("id_username".to_string());
     }
-    if header.contains("GPU 서버") {
+    if header.contains("사용할 서버") {
         return Ok("gpu_server".to_string());
     }
     if header.contains("GPU 개수") {
         return Ok("gpu_request".to_string());
     }
-    if header.contains("CPU 코어") || header.contains("CPU 개수") {
+    if header.contains("vCPU 개수") {
         return Ok("cpu_request".to_string());
     }
     if header.contains("메모리") {
@@ -107,6 +109,9 @@ fn try_infer_header(header: impl AsRef<str>) -> Result<String, Error> {
     }
     if header.contains("스토리지") {
         return Ok("storage_request".to_string());
+    }
+    if header.contains("MiG 개수") {
+        return Ok("mig_request".to_string());
     }
 
     return Err(Error::CsvHeaderError(format!(
@@ -219,7 +224,7 @@ async fn synchronize_loop(
                     ),
                     (
                         "requests.memory".to_string(),
-                        Quantity(format!("{}Mi", row.memory_request).into()),
+                        Quantity(format!("{}Gi", row.memory_request).into()),
                     ),
                     (
                         "limits.cpu".to_string(),
@@ -227,7 +232,7 @@ async fn synchronize_loop(
                     ),
                     (
                         "limits.memory".to_string(),
-                        Quantity(format!("{}Mi", row.memory_request).into()),
+                        Quantity(format!("{}Gi", row.memory_request).into()),
                     ),
                     (
                         "requests.nvidia.com/gpu".to_string(),
@@ -236,6 +241,10 @@ async fn synchronize_loop(
                     (
                         "requests.storage".to_string(),
                         Quantity(format!("{}Gi", row.storage_request).into()),
+                    ),
+                    (
+                        "requests.nvidia.com/mig-1g.10gb".to_string(),
+                        Quantity(row.mig_request.to_string().into()),
                     ),
                 ])),
                 ..Default::default()
@@ -267,6 +276,7 @@ async fn synchronize_loop(
                 row.memory_request,
                 row.gpu_request,
                 row.storage_request,
+                row.mig_request,
                 "updating quota"
             );
 
