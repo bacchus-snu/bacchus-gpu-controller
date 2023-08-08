@@ -65,6 +65,9 @@ struct Row {
     // timestamp field (unused)
     // timestamp: String,
 
+    // description (unused)
+    // description: String,
+
     // real name
     name: String,
     // username in id.snucse.org
@@ -81,6 +84,8 @@ struct Row {
     storage_request: i64,
     // mig request
     mig_request: i64,
+    // authorized
+    authorized: String,
 }
 
 // try to infer header name with heuristics
@@ -112,6 +117,12 @@ fn try_infer_header(header: impl AsRef<str>) -> Result<String, Error> {
     }
     if header.contains("MiG 개수") {
         return Ok("mig_request".to_string());
+    }
+    if header.contains("요청 사유") {
+        return Ok("description".to_string());
+    }
+    if header.contains("승인") {
+        return Ok("authorized".to_string());
     }
 
     return Err(Error::CsvHeaderError(format!(
@@ -204,6 +215,12 @@ async fn synchronize_loop(
                 Some(row) => row,
                 None => continue,
             };
+
+            // if not authorized, skip
+            match row.authorized.trim().to_lowercase().as_str() {
+                "o" => {}
+                _ => continue,
+            }
 
             // let's update the quota!
 
