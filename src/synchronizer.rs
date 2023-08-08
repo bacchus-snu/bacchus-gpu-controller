@@ -211,20 +211,18 @@ async fn synchronize_loop(
             };
 
             // find row which has same username (last match)
-            let row = match rows
-                .iter()
-                .rev()
-                .find(|row| row.id_username == resource_name)
-            {
+            let row = match rows.iter().rev().find(|row| {
+                // if not authorized, skip
+                let authorized = row.authorized.trim().to_lowercase();
+                match authorized.as_str() {
+                    "o" => {}
+                    _ => return false,
+                }
+                row.id_username == resource_name
+            }) {
                 Some(row) => row,
                 None => continue,
             };
-
-            // if not authorized, skip
-            match row.authorized.trim().to_lowercase().as_str() {
-                "o" => {}
-                _ => continue,
-            }
 
             // let's update the quota!
 
