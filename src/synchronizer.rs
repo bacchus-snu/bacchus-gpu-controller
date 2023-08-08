@@ -12,7 +12,7 @@ use json_patch::{AddOperation, PatchOperation, ReplaceOperation};
 use k8s_openapi::{api::core::v1::ResourceQuotaSpec, apimachinery::pkg::api::resource::Quantity};
 use kube::{
     api::{ListParams, Patch, PatchParams, PostParams},
-    Api,
+    Api, ResourceExt,
 };
 use serde::Deserialize;
 use stopper::Stopper;
@@ -273,10 +273,18 @@ async fn synchronize_loop(
             }));
 
             // mark on status
-            let status = UserBootstrapStatus {
-                synchronized_with_sheet: true,
-                ..Default::default()
-            };
+            let status = serde_json::json!({
+                "apiVersion": "bacchus.io/v1",
+                "kind": "UserBootstrap",
+                "metadata": {
+                    "name": resource_name,
+                    "resourceVersion": ub.resource_version(),
+                },
+                "status": UserBootstrapStatus {
+                    synchronized_with_sheet: true,
+                    ..Default::default()
+                },
+            });
             tracing::info!("updating status");
             ub_api
                 .replace_status(
