@@ -210,8 +210,12 @@ async fn synchronize_loop(
                 None => continue,
             };
 
-            // find row which has same username
-            let row = match rows.iter().find(|row| row.id_username == resource_name) {
+            // find row which has same username (last match)
+            let row = match rows
+                .iter()
+                .rev()
+                .find(|row| row.id_username == resource_name)
+            {
                 Some(row) => row,
                 None => continue,
             };
