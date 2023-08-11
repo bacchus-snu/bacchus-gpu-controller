@@ -68,6 +68,9 @@ struct Row {
     // description (unused)
     // description: String,
 
+    // email (unused)
+    // email: String,
+
     // real name
     name: String,
     // username in id.snucse.org
@@ -123,6 +126,9 @@ fn try_infer_header(header: impl AsRef<str>) -> Result<String, Error> {
     }
     if header.contains("승인") {
         return Ok("authorized".to_string());
+    }
+    if header.contains("이메일") {
+        return Ok("email".to_string());
     }
 
     return Err(Error::CsvHeaderError(format!(
