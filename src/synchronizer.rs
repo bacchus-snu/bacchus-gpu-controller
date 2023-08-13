@@ -97,10 +97,10 @@ fn try_infer_header(header: impl AsRef<str>) -> Result<String, Error> {
     if header == "타임스탬프" {
         return Ok("timestamp".to_string());
     }
-    if header == "이름" {
+    if header == "이름 및 소속" {
         return Ok("name".to_string());
     }
-    if header.contains("SNUCSE") && header.contains("이름") {
+    if header.contains("SNUCSE ID") {
         return Ok("id_username".to_string());
     }
     if header.contains("사용할 서버") {
