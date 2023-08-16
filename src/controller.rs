@@ -52,10 +52,15 @@ async fn reconcile(obj: Arc<UserBootstrap>, ctx: Arc<Data>) -> Result<Action, Co
     let oref = obj.controller_owner_ref(&()).unwrap();
 
     // get name from UserBootstrap metadata
-    let name = obj.metadata.name.clone().ok_or_else(|| {
-        tracing::error!("failed to get name");
-        ControllerError::MissingObjectKey(".metadata.name")
-    })?;
+    let name = obj
+        .metadata
+        .name
+        .clone()
+        .ok_or_else(|| {
+            tracing::error!("failed to get name");
+            ControllerError::MissingObjectKey(".metadata.name")
+        })?
+        .to_lowercase();
 
     tracing::info!("reconciling {}", name);
 
