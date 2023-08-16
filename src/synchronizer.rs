@@ -73,6 +73,8 @@ struct Row {
 
     // real name
     name: String,
+    // department
+    department: String,
     // username in id.snucse.org
     id_username: String,
     // gpu server name
@@ -97,8 +99,11 @@ fn try_infer_header(header: impl AsRef<str>) -> Result<String, Error> {
     if header == "타임스탬프" {
         return Ok("timestamp".to_string());
     }
-    if header == "이름 및 소속" {
+    if header == "이름" {
         return Ok("name".to_string());
+    }
+    if header == "소속" {
+        return Ok("department".to_string());
     }
     if header.contains("SNUCSE ID") {
         return Ok("id_username".to_string());
@@ -304,6 +309,7 @@ async fn synchronize_loop(
 
             tracing::info!(
                 row.name,
+                row.department,
                 row.id_username,
                 row.cpu_request,
                 row.memory_request,
