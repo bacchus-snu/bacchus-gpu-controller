@@ -70,7 +70,7 @@ async fn reconcile(obj: Arc<UserBootstrap>, ctx: Arc<Data>) -> Result<Action, Co
     let ns = Namespace {
         metadata: ObjectMeta {
             name: Some(name.clone()),
-            owner_references: Some(vec![oref]),
+            owner_references: Some(vec![oref.clone()]),
             ..Default::default()
         },
         ..Default::default()
@@ -91,6 +91,7 @@ async fn reconcile(obj: Arc<UserBootstrap>, ctx: Arc<Data>) -> Result<Action, Co
         let quota = ResourceQuota {
             metadata: ObjectMeta {
                 name: Some(name.clone()),
+                owner_references: Some(vec![oref.clone()]),
                 ..Default::default()
             },
             spec: Some(quota_spec),
@@ -109,8 +110,9 @@ async fn reconcile(obj: Arc<UserBootstrap>, ctx: Arc<Data>) -> Result<Action, Co
     }
 
     // reconcile role
-    if let Some(role) = obj.spec.role.clone() {
+    if let Some(mut role) = obj.spec.role.clone() {
         let role_api = Api::<Role>::namespaced(client.clone(), &name);
+        role.metadata.owner_references = Some(vec![oref.clone()]);
 
         role_api
             .patch(&name, &patch_params, &Patch::Apply(role))
@@ -129,6 +131,7 @@ async fn reconcile(obj: Arc<UserBootstrap>, ctx: Arc<Data>) -> Result<Action, Co
                 let rolebinding_with_meta = RoleBinding {
                     metadata: ObjectMeta {
                         name: Some(name.clone()),
+                        owner_references: Some(vec![oref]),
                         ..Default::default()
                     },
                     role_ref: rolebinding.role_ref,
